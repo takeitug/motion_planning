@@ -3,7 +3,7 @@
 
 #include "eigen3/Eigen/Dense"
 
-namespace manipulability {
+namespace inversekinematics {
 
 //jacobian calculation
 Eigen::Matrix<double, 6, 7> calcJacobian(const Eigen::VectorXd &joint_position);
@@ -11,9 +11,6 @@ Eigen::Matrix<double, 6, 7> calcJacobian(const Eigen::VectorXd &joint_position);
 //pseudo-inverse calculation
 Eigen::Matrix<double, 7, 6> calcJacobianInverse(const Eigen::MatrixXd &jacobian);
 
-//manipulability
-double calcmanipulability(const Eigen::MatrixXd &jacobian);
-
-}  // namespace manipulability
+}  // namespace inversekinematics
 
 #endif  // MANIPULABILITY_INVERSE_H

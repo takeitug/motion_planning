@@ -1,6 +1,6 @@
 #include "motion_planning/inverse.h"
 
-namespace manipulability {
+namespace inversekinematics {
 
 Eigen::Matrix<double, 6, 7> calcJacobian(const Eigen::VectorXd &joint_position) {
     // ここにヤコビ行列計算の実装を書く
@@ -89,9 +89,4 @@ Eigen::Matrix<double, 7, 6> calcJacobianInverse(const Eigen::MatrixXd &jacobian)
     return jacobian.completeOrthogonalDecomposition().pseudoInverse();
 }
 
-double calcmanipulability(const Eigen::MatrixXd &jacobian){
-    Eigen::MatrixXd jj_t=jacobian*jacobian.transpose();
-    return sqrt(jj_t.determinant());
-}
-
-}  // namespace manipulability
+}  // namespace inversekinematics

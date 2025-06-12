@@ -27,18 +27,19 @@ if(BUILD_TESTING)
 endif()
 
 # ライブラリのビルド
-add_library(manipulability_inverselib
+add_library(manipulability_lib
   src/inverse.cpp
+  src/manipulability_gradient.cpp
 )
-target_include_directories(manipulability_inverselib PUBLIC
+target_include_directories(manipulability_lib PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-ament_target_dependencies(manipulability_inverselib Eigen3)
+ament_target_dependencies(manipulability_lib Eigen3)
 
 # 実行ファイルのビルド
 add_executable(joint_state_listener src/joint_state_listener.cpp)
-target_link_libraries(joint_state_listener manipulability_inverselib)
+target_link_libraries(joint_state_listener manipulability_lib)
 ament_target_dependencies(joint_state_listener rclcpp sensor_msgs Eigen3)
 
 # ヘッダファイルのインストール
