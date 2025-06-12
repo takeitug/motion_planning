@@ -5,11 +5,14 @@
 
 namespace manipulability {
 
-// 例：ヤコビ行列を計算する関数（実装省略）
+//jacobian calculation
 Eigen::Matrix<double, 6, 7> calcJacobian(const Eigen::VectorXd &joint_position);
 
-// 例：逆行列を計算する関数（実装省略）
+//pseudo-inverse calculation
 Eigen::Matrix<double, 7, 6> calcJacobianInverse(const Eigen::MatrixXd &jacobian);
+
+//manipulability
+double calcmanipulability(const Eigen::MatrixXd &jacobian);
 
 }  // namespace manipulability
 

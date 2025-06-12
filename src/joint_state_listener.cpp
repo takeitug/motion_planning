@@ -35,14 +35,16 @@ private:
 
         // Eigenベクトルに変換
         Eigen::VectorXd joints = Eigen::VectorXd::Map(last_position_.data(), last_position_.size());
-        std::cout << "Jacobian:\n" << joints[0] << std::endl;
         // ヤコビ行列を計算
         Eigen::Matrix<double, 6, 7> J = manipulability::calcJacobian(joints);
         // 逆行列も計算
-        //Eigen::Matrix<double, 7, 6> J_inv = manipulability::calcJacobianInverse(J);
+        Eigen::Matrix<double, 7, 6> J_inv = manipulability::calcJacobianInverse(J);
+
+        double manip=manipulability::calcmanipulability(J);
 
         //std::cout << "Jacobian:\n" << J << std::endl;
         //std::cout << "Jacobian Inverse:\n" << J_inv << std::endl;
+        std::cout<<"manipulability:\n"<<manip<<std::endl;
     }
 
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr subscription_;

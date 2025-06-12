@@ -89,4 +89,9 @@ Eigen::Matrix<double, 7, 6> calcJacobianInverse(const Eigen::MatrixXd &jacobian)
     return jacobian.completeOrthogonalDecomposition().pseudoInverse();
 }
 
+double calcmanipulability(const Eigen::MatrixXd &jacobian){
+    Eigen::MatrixXd jj_t=jacobian*jacobian.transpose();
+    return sqrt(jj_t.determinant());
+}
+
 }  // namespace manipulability
