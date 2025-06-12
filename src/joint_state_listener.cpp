@@ -44,6 +44,7 @@ private:
         double manip=manipulability::calcmanipulability(J);
 
         Eigen::Matrix<double, 6, 7> Jq1=manipulability::Jq1(joints);
+        /*
         Eigen::Matrix<double, 6, 7> Jq2=manipulability::Jq2(joints);
         Eigen::Matrix<double, 6, 7> Jq3=manipulability::Jq3(joints);
         Eigen::Matrix<double, 6, 7> Jq4=manipulability::Jq4(joints);
@@ -53,6 +54,10 @@ private:
 
         Eigen::VectorXd trace_vec=calctrace(Jq1,Jq2,Jq3,Jq4,Jq5,Jq6,Jq7,J_inv);
         Eigen::VectorXd manipulability_gradient=gradient(manip,trace_vec);
+
+        Eigen::Matrix<double, 6, 7> J_trans=inversekinematics::Jacobian_trans(J);
+        */
+        //Eigen::Matrix<double, 7, 6> J_trans_inv = inversekinematics::calcJacobianInverse(J_trans);
 
         //std::cout << "Jacobian:\n" << J << std::endl;
         //std::cout << "Jacobian Inverse:\n" << J_inv << std::endl;

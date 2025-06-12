@@ -8,6 +8,8 @@ namespace inversekinematics {
 //jacobian calculation
 Eigen::Matrix<double, 6, 7> calcJacobian(const Eigen::VectorXd &joint_position);
 
+Eigen::Matrix<double, 6, 7> Jacobian_trans(const Eigen::MatrixXd &jacobian);
+
 //pseudo-inverse calculation
 Eigen::Matrix<double, 7, 6> calcJacobianInverse(const Eigen::MatrixXd &jacobian);
 
