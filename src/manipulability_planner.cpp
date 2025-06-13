@@ -44,6 +44,8 @@ public:
 private:
     double manip_;
     std::vector<double> manip_trans_;
+    std::vector<double> fk_mat_;
+    std::vector<double> fk_col4_;
     rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr manip_sub_;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr manip_trans_sub_;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr fk_sub_;
