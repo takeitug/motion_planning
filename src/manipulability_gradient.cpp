@@ -485,21 +485,24 @@ Eigen::Matrix<double, 6, 7> Jq7(const Eigen::VectorXd &joint_position){
 }
 
 Eigen::VectorXd calctrace(const Eigen::MatrixXd &jq1, const Eigen::MatrixXd &jq2, const Eigen::MatrixXd &jq3, const Eigen::MatrixXd &jq4, const Eigen::MatrixXd &jq5, const Eigen::MatrixXd &jq6, const Eigen::MatrixXd &jq7, const Eigen::MatrixXd &j_inv){
-    Eigen::MatrixXd Jq1_inv=jq1*j_inv;
-    Eigen::MatrixXd Jq2_inv=jq2*j_inv;
-    Eigen::MatrixXd Jq3_inv=jq3*j_inv;
-    Eigen::MatrixXd Jq4_inv=jq4*j_inv;
-    Eigen::MatrixXd Jq5_inv=jq5*j_inv;
-    Eigen::MatrixXd Jq6_inv=jq6*j_inv;
-    Eigen::MatrixXd Jq7_inv=jq7*j_inv;
+    Eigen::Matrix<double, 6, 6> Jq1_inv=jq1*j_inv;
+    Eigen::Matrix<double, 6, 6> Jq2_inv=jq2*j_inv;
+    Eigen::Matrix<double, 6, 6> Jq3_inv=jq3*j_inv;
+    Eigen::Matrix<double, 6, 6> Jq4_inv=jq4*j_inv;
+    Eigen::Matrix<double, 6, 6> Jq5_inv=jq5*j_inv;
+    Eigen::Matrix<double, 6, 6> Jq6_inv=jq6*j_inv;
+    Eigen::Matrix<double, 6, 6> Jq7_inv=jq7*j_inv;
 
-    Eigen::VectorXd trace;
+    Eigen::Matrix<double, 7, 1> trace;
     trace<<Jq1_inv.trace(),Jq2_inv.trace(),Jq3_inv.trace(),Jq4_inv.trace(),Jq5_inv.trace(),Jq6_inv.trace(),Jq7_inv.trace();
+    //trace<<0,0,0,0,0,0,0;
 
-    return trace;
+    Eigen::VectorXd vec=trace;
+
+    return vec;
 }
 
-Eigen::VecterXd gradient(const double &manip, const Eigen::VecterXd &trace_vec){
+Eigen::VectorXd gradient(const double &manip, const Eigen::VectorXd &trace_vec){
     return manip*trace_vec;
 }
 

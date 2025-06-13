@@ -44,7 +44,6 @@ private:
         double manip=manipulability::calcmanipulability(J);
 
         Eigen::Matrix<double, 6, 7> Jq1=manipulability::Jq1(joints);
-        /*
         Eigen::Matrix<double, 6, 7> Jq2=manipulability::Jq2(joints);
         Eigen::Matrix<double, 6, 7> Jq3=manipulability::Jq3(joints);
         Eigen::Matrix<double, 6, 7> Jq4=manipulability::Jq4(joints);
@@ -52,16 +51,18 @@ private:
         Eigen::Matrix<double, 6, 7> Jq6=manipulability::Jq6(joints);
         Eigen::Matrix<double, 6, 7> Jq7=manipulability::Jq7(joints);
 
-        Eigen::VectorXd trace_vec=calctrace(Jq1,Jq2,Jq3,Jq4,Jq5,Jq6,Jq7,J_inv);
-        Eigen::VectorXd manipulability_gradient=gradient(manip,trace_vec);
+        Eigen::VectorXd trace_vec=manipulability::calctrace(Jq1,Jq2,Jq3,Jq4,Jq5,Jq6,Jq7,J_inv);
+        Eigen::VectorXd manipulability_gradient=manipulability::gradient(manip,trace_vec);
 
         Eigen::Matrix<double, 6, 7> J_trans=inversekinematics::Jacobian_trans(J);
-        */
+
         //Eigen::Matrix<double, 7, 6> J_trans_inv = inversekinematics::calcJacobianInverse(J_trans);
 
-        //std::cout << "Jacobian:\n" << J << std::endl;
-        //std::cout << "Jacobian Inverse:\n" << J_inv << std::endl;
-        //std::cout<<"manipulability:\n"<<manip<<std::endl;
+        std::cout << "Jacobian:\n" << J << std::endl;
+        std::cout << "Jacobian Inverse:\n" << J_inv << std::endl;
+        std::cout<<"manipulability:\n"<<manip<<std::endl;
+        std::cout << "trace:\n" << trace_vec << std::endl;
+        std::cout << "gradient:\n" << manipulability_gradient << std::endl;
     }
 
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr subscription_;

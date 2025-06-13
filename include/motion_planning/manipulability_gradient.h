@@ -18,7 +18,7 @@ Eigen::Matrix<double, 6, 7> Jq7(const Eigen::VectorXd &joint_position);
 
 Eigen::VectorXd calctrace(const Eigen::MatrixXd &jq1, const Eigen::MatrixXd &jq2, const Eigen::MatrixXd &jq3, const Eigen::MatrixXd &jq4, const Eigen::MatrixXd &jq5, const Eigen::MatrixXd &jq6, const Eigen::MatrixXd &jq7, const Eigen::MatrixXd &j_inv);
 
-Eigen::VecterXd gradient(const double &manip, const Eigen::VecterXd &trace_vec);
+Eigen::VectorXd gradient(const double &manip, const Eigen::VectorXd &trace_vec);
 
 }  // namespace manipulability
 

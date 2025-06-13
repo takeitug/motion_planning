@@ -50,7 +50,7 @@ install(DIRECTORY include/
 # 実行ファイル・ライブラリのインストール
 install(TARGETS
   joint_state_listener
-  manipulability_inverselib
+  manipulability_lib
   DESTINATION lib/${PROJECT_NAME}
 )
 
