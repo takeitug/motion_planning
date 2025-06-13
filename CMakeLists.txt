@@ -31,6 +31,7 @@ endif()
 add_library(manipulability_lib
   src/inverse.cpp
   src/manipulability_gradient.cpp
+  src/forward.cpp
 )
 target_include_directories(manipulability_lib PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

@@ -39,7 +39,7 @@ int main(int argc, char * argv[])
     rclcpp::init(argc, argv);
     auto node = std::make_shared<ManipulabilityPlanner>();
 
-    rclcpp::Rate rate(100); // 10Hz
+    rclcpp::Rate rate(100);
     while (rclcpp::ok()) {
         // 購読トピックのコールバック実行（値を更新）
         rclcpp::spin_some(node);

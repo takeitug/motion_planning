@@ -78,6 +78,8 @@ private:
 
         // Eigenベクトルに変換
         Eigen::VectorXd joints = Eigen::VectorXd::Map(last_position_.data(), last_position_.size());
+        //順運動学
+        Eigen::Matrix<double,4,4> FK=forwardkinematics::calcfk(joints);
         // ヤコビ行列を計算
         Eigen::Matrix<double, 6, 7> J = inversekinematics::calcJacobian(joints);
         // 逆行列も計算
@@ -127,6 +129,7 @@ private:
         //std::cout<<"manipulability:\n"<<manip<<std::endl;
         //std::cout << "trace:\n" << trace_vec << std::endl;
         //std::cout << "gradient:\n" << manipulability_gradient << std::endl;
+        std::cout << "FK:\n" << FK << std::endl;
     }
 
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr subscription_;
