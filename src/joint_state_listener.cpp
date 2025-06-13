@@ -41,6 +41,7 @@ public:
 
         manip_pub_ = this->create_publisher<std_msgs::msg::Float64>("manipulability", 10);
         manip_trans_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("manipulability_trans", 10);
+        fk_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("fk_matrix", 10);
 
     }
 
@@ -127,6 +128,15 @@ private:
         }
         manip_trans_pub_->publish(manip_trans_msg);
 
+        std_msgs::msg::Float64MultiArray fk_msg;
+        fk_msg.data.resize(16); // 4x4=16
+        for(int row=0; row<4; ++row) {
+            for(int col=0; col<4; ++col) {
+                fk_msg.data[row*4 + col] = FK(row, col);
+            }
+        }
+        fk_pub_->publish(fk_msg);
+
         //std::cout << "Jacobian:\n" << J << std::endl;
         //std::cout << "Jacobian Inverse:\n" << J_inv << std::endl;
         //std::cout<<"manipulability:\n"<<manip<<std::endl;
@@ -140,6 +150,7 @@ private:
     std::vector<double> last_position_;
     rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr manip_pub_;
     rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr manip_trans_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr fk_pub_;
 
 
     // 並び替え用メンバ
