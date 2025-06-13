@@ -62,6 +62,7 @@ int main(int argc, char * argv[])
         // 最新の値を取得
         double manip = node->get_manip();
         std::vector<double> manip_trans = node->get_manip_trans();
+        std::vector<double> fk_col4 = node->get_fk_col4();
 
         std::cout << "[manipulability] " << manip << std::endl;
         std::cout << "[manipulability_trans] [";
