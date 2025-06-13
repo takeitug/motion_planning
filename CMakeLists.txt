@@ -43,6 +43,9 @@ add_executable(joint_state_listener src/joint_state_listener.cpp)
 target_link_libraries(joint_state_listener manipulability_lib)
 ament_target_dependencies(joint_state_listener rclcpp sensor_msgs Eigen3 std_msgs)
 
+add_executable(manipulability_planner src/manipulability_planner.cpp)
+ament_target_dependencies(manipulability_planner rclcpp std_msgs)
+
 # ヘッダファイルのインストール
 install(DIRECTORY include/
   DESTINATION include/
@@ -52,6 +55,7 @@ install(DIRECTORY include/
 install(TARGETS
   joint_state_listener
   manipulability_lib
+  manipulability_planner
   DESTINATION lib/${PROJECT_NAME}
 )
 
