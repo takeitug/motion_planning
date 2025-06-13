@@ -10,6 +10,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(std_msgs REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -40,7 +41,7 @@ ament_target_dependencies(manipulability_lib Eigen3)
 # 実行ファイルのビルド
 add_executable(joint_state_listener src/joint_state_listener.cpp)
 target_link_libraries(joint_state_listener manipulability_lib)
-ament_target_dependencies(joint_state_listener rclcpp sensor_msgs Eigen3)
+ament_target_dependencies(joint_state_listener rclcpp sensor_msgs Eigen3 std_msgs)
 
 # ヘッダファイルのインストール
 install(DIRECTORY include/

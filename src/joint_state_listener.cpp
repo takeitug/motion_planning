@@ -8,6 +8,9 @@
 #include "motion_planning/inverse.h"
 #include "motion_planning/manipulability_gradient.h"
 #include <algorithm>
+#include <std_msgs/msg/float64.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
+
 
 using namespace std::chrono_literals;
 
@@ -32,6 +35,10 @@ public:
             "/lbr/joint_states", 10,
             std::bind(&JointStateListener::topic_callback, this, std::placeholders::_1));
         timer_ = this->create_wall_timer(10ms, std::bind(&JointStateListener::timer_callback, this));
+
+        manip_pub_ = this->create_publisher<std_msgs::msg::Float64>("manipulability", 10);
+        manip_trans_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("manipulability_trans", 10);
+
     }
 
 private:
@@ -91,6 +98,8 @@ private:
 
         Eigen::Matrix<double, 6, 7> J_trans=inversekinematics::Jacobian_trans(J);
 
+        Eigen::VectorXd manipulability_trans=J_trans*manipulability_gradient;
+
         //Eigen::Matrix<double, 7, 6> J_trans_inv = inversekinematics::calcJacobianInverse(J_trans);
 
         // 終了時間を記録
@@ -100,6 +109,18 @@ private:
         //auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
 
         //std::cout << "計算時間: " << elapsed << " マイクロ秒" << std::endl;
+
+        std_msgs::msg::Float64 manip_msg;
+        manip_msg.data = manip;
+        manip_pub_->publish(manip_msg);
+
+        // manipulability_transをパブリッシュ
+        std_msgs::msg::Float64MultiArray manip_trans_msg;
+        manip_trans_msg.data.resize(manipulability_trans.size());
+        for (int i = 0; i < manipulability_trans.size(); ++i) {
+            manip_trans_msg.data[i] = manipulability_trans(i);
+        }
+        manip_trans_pub_->publish(manip_trans_msg);
 
         //std::cout << "Jacobian:\n" << J << std::endl;
         //std::cout << "Jacobian Inverse:\n" << J_inv << std::endl;
@@ -111,6 +132,9 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr subscription_;
     rclcpp::TimerBase::SharedPtr timer_;
     std::vector<double> last_position_;
+    rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr manip_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr manip_trans_pub_;
+
 
     // 並び替え用メンバ
     std::vector<std::string> desired_order_;
