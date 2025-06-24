@@ -14,6 +14,8 @@
 
 #include <geometry_msgs/msg/pose.hpp>
 #include <moveit/move_group_interface/move_group_interface.h>
+#include <moveit/robot_trajectory/robot_trajectory.h>
+#include <moveit/trajectory_processing/time_parameterization.h>
 
 class ManipulabilityPlanner : public rclcpp::Node
 {
@@ -231,15 +233,32 @@ int main(int argc, char * argv[])
 
     // Cartesian Path計画
     moveit_msgs::msg::RobotTrajectory trajectory;
-    const double eef_step = 0.01;       // 1cm刻み
-    const double jump_threshold = 0.0;  // joint-spaceジャンプしない
+    const double eef_step = 0.01;
+    const double jump_threshold = 0.0;
     double fraction = move_group_interface.computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
 
     if (fraction > 0.99) {
         moveit::planning_interface::MoveGroupInterface::Plan plan;
-        plan.trajectory_ = trajectory;
+
+        // 1. RobotTrajectoryをMoveIt型に
+        robot_trajectory::RobotTrajectory rt(
+            move_group_interface.getCurrentState()->getRobotModel(),
+            move_group_interface.getName());
+        rt.setRobotTrajectoryMsg(*move_group_interface.getCurrentState(), trajectory);
+
+        // 2. 時間パラメータ付与（例: 0.1=10%の速度で）
+        double velocity_scaling = 0.1;         // 安全速度
+        double acceleration_scaling = 0.1;     // 安全加速度
+        trajectory_processing::IterativeParabolicTimeParameterization iptp;
+        bool success = iptp.computeTimeStamps(rt, velocity_scaling, acceleration_scaling);
+
+        // 3. 再度planに戻す
+        rt.getRobotTrajectoryMsg(plan.trajectory_);
+
+        // 4. 実行
         move_group_interface.execute(plan);
-        RCLCPP_INFO(moveit_node->get_logger(), "Cartesian path executed to AR marker1 position.");
+
+        RCLCPP_INFO(moveit_node->get_logger(), "Cartesian path executed at scaled speed to AR marker1 position.");
     } else {
         RCLCPP_ERROR(moveit_node->get_logger(), "Cartesian path planning failed. Fraction: %.2f", fraction);
     }
