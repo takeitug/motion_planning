@@ -77,9 +77,6 @@ private:
     {
         if (last_position_.empty()) return;
 
-        // 開始時間を記録
-        //auto t_start = std::chrono::high_resolution_clock::now();
-
         // Eigenベクトルに変換
         Eigen::VectorXd joints = Eigen::VectorXd::Map(last_position_.data(), last_position_.size());
         //順運動学
@@ -105,16 +102,6 @@ private:
         Eigen::Matrix<double, 6, 7> J_trans=inversekinematics::Jacobian_trans(J);
 
         Eigen::VectorXd manipulability_trans=J_trans*manipulability_gradient;
-
-        //Eigen::Matrix<double, 7, 6> J_trans_inv = inversekinematics::calcJacobianInverse(J_trans);
-
-        // 終了時間を記録
-        //auto t_end = std::chrono::high_resolution_clock::now();
-
-        // 経過時間をミリ秒で出力
-        //auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
-
-        //std::cout << "計算時間: " << elapsed << " マイクロ秒" << std::endl;
 
         std_msgs::msg::Float64 manip_msg;
         manip_msg.data = manip;
@@ -162,7 +149,20 @@ private:
 int main(int argc, char * argv[])
 {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<JointStateListener>());
+
+    auto node = std::make_shared<JointStateListener>();
+    rclcpp::Rate rate(100);  // 100Hz
+
+    while (rclcpp::ok()) {
+        rclcpp::spin_some(node);
+
+        // ここにmainループ独自の処理を書けます
+        // 例: std::cout << "main loop running" << std::endl;
+        // 必要に応じてsleep前にトピックのパブリッシュなども可
+
+        rate.sleep();
+    }
+
     rclcpp::shutdown();
     return 0;
 }
