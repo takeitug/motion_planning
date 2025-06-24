@@ -191,7 +191,7 @@ int main(int argc, char * argv[])
     // MoveItのセットアップ
     auto moveit_node = rclcpp::Node::make_shared("moveit_commander");
     moveit_node->declare_parameter("robot_name", "lbr");
-    std::string robot_name = moveit_node->get_parameter("robot_name").as_string();
+    std::string robot_name = "iiwa7";
 
     auto move_group_interface = moveit::planning_interface::MoveGroupInterface(
         moveit_node,
