@@ -237,7 +237,15 @@ int main(int argc, char * argv[])
     const double eef_step = 0.01;
     const double jump_threshold = 0.0;
     double fraction = move_group_interface.computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
-    const auto last_point = trajectory.joint_trajectory.points.back();
+    
+    if (fraction > 0.99) {
+        moveit::planning_interface::MoveGroupInterface::Plan plan;
+        plan.trajectory_ = trajectory;
+        move_group_interface.execute(plan);
+        RCLCPP_INFO(moveit_node->get_logger(), "Cartesian path executed to AR marker1 position.");
+    } else {
+        RCLCPP_ERROR(moveit_node->get_logger(), "Cartesian path planning failed. Fraction: %.2f", fraction);
+    }
     std::cout << last_point.positions[0] << std::endl;
 
     if (!trajectory.joint_trajectory.points.empty()) {
