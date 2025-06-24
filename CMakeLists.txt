@@ -11,6 +11,7 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -45,7 +46,7 @@ target_link_libraries(joint_state_listener manipulability_lib)
 ament_target_dependencies(joint_state_listener rclcpp sensor_msgs Eigen3 std_msgs)
 
 add_executable(manipulability_planner src/manipulability_planner.cpp)
-ament_target_dependencies(manipulability_planner rclcpp std_msgs)
+ament_target_dependencies(manipulability_planner rclcpp sensor_msgs Eigen3 std_msgs geometry_msgs)
 
 # ヘッダファイルのインストール
 install(DIRECTORY include/
