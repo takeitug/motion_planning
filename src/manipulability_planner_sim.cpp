@@ -13,10 +13,10 @@
 #include <geometry_msgs/msg/pose_stamped.hpp>
 
 #include <geometry_msgs/msg/pose.hpp>
-#include <moveit/move_group_interface/move_group_interface.h>
-#include <moveit/robot_trajectory/robot_trajectory.h>
-#include <moveit/trajectory_processing/time_parameterization.h>
-#include <moveit/trajectory_processing/iterative_time_parameterization.h>
+#include <moveit/move_group_interface/move_group_interface.hpp>
+#include <moveit/robot_trajectory/robot_trajectory.hpp>
+#include <moveit/trajectory_processing/time_parameterization.hpp>
+#include <moveit/trajectory_processing/iterative_time_parameterization.hpp>
 
 class ManipulabilityPlanner : public rclcpp::Node
 {
@@ -240,65 +240,76 @@ int main(int argc, char * argv[])
     const double jump_threshold = 0.0;
     double fraction = move_group_interface.computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
 
-    if (fraction > 0.99) {
-        moveit::planning_interface::MoveGroupInterface::Plan plan;
+    if (!trajectory.joint_trajectory.points.empty()) {
+        const auto& last_point = trajectory.joint_trajectory.points.back();
+        const auto& joint_names = trajectory.joint_trajectory.joint_names;
+        const auto& joint_angles = last_point.positions;
 
-        // 1. RobotTrajectoryをMoveIt型に
-        robot_trajectory::RobotTrajectory rt(
-            move_group_interface.getCurrentState()->getRobotModel(),
-            move_group_interface.getName());
-        rt.setRobotTrajectoryMsg(*move_group_interface.getCurrentState(), trajectory);
-
-        // 2. 時間パラメータ付与（例: 0.1=10%の速度で）
-        double velocity_scaling = 0.1;         // 安全速度
-        double acceleration_scaling = 0.1;     // 安全加速度
-        trajectory_processing::IterativeParabolicTimeParameterization iptp;
-        bool success = iptp.computeTimeStamps(rt, velocity_scaling, acceleration_scaling);
-
-        // 3. 再度planに戻す
-        rt.getRobotTrajectoryMsg(plan.trajectory_);
-
-        // 4. 実行
-        move_group_interface.execute(plan);
-
-        RCLCPP_INFO(moveit_node->get_logger(), "Cartesian path executed at scaled speed to AR marker1 position.");
-    } else {
-        RCLCPP_ERROR(moveit_node->get_logger(), "Cartesian path planning failed. Fraction: %.2f", fraction);
+        std::cout << "到達点の関節角度:" << std::endl;
+        for (size_t i = 0; i < joint_angles.size(); ++i) {
+            std::cout << joint_names[i] << ": " << joint_angles[i] << std::endl;
+        }
     }
+
+    // if (fraction > 0.99) {
+    //     moveit::planning_interface::MoveGroupInterface::Plan plan;
+
+    //     // 1. RobotTrajectoryをMoveIt型に
+    //     robot_trajectory::RobotTrajectory rt(
+    //         move_group_interface.getCurrentState()->getRobotModel(),
+    //         move_group_interface.getName());
+    //     rt.setRobotTrajectoryMsg(*move_group_interface.getCurrentState(), trajectory);
+
+    //     // 2. 時間パラメータ付与（例: 0.1=10%の速度で）
+    //     double velocity_scaling = 0.1;         // 安全速度
+    //     double acceleration_scaling = 0.1;     // 安全加速度
+    //     trajectory_processing::IterativeParabolicTimeParameterization iptp;
+    //     bool success = iptp.computeTimeStamps(rt, velocity_scaling, acceleration_scaling);
+
+    //     // 3. 再度planに戻す
+    //     rt.getRobotTrajectoryMsg(plan.trajectory_);
+
+    //     // 4. 実行
+    //     move_group_interface.execute(plan);
+
+    //     RCLCPP_INFO(moveit_node->get_logger(), "Cartesian path executed at scaled speed to AR marker1 position.");
+    // } else {
+    //     RCLCPP_ERROR(moveit_node->get_logger(), "Cartesian path planning failed. Fraction: %.2f", fraction);
+    // }
 
     double coef_manip=0.5;
     double coef_pos=1.0;
 
     // rclcpp::Rate rate(100);
-    while (rclcpp::ok()) {
-        rclcpp::spin_some(node);
+    // while (rclcpp::ok()) {
+    //     rclcpp::spin_some(node);
 
-        double manip = node->get_manip();
-        Eigen::VectorXd manip_trans = node->get_manip_trans();
-        Eigen::Vector4d fk_col4 = node->get_fk_col4();
+    //     double manip = node->get_manip();
+    //     Eigen::VectorXd manip_trans = node->get_manip_trans();
+    //     Eigen::Vector4d fk_col4 = node->get_fk_col4();
 
-        Eigen::Vector3d manip_direc = manip_trans.head<3>();
-        Eigen::Vector3d current_pos = fk_col4.head<3>();
-        Eigen::Vector3d goal_vec=goal_pos-current_pos;
-        double distance=goal_vec.norm();
-        if (distance<0.01){
-            break;
-        }
+    //     Eigen::Vector3d manip_direc = manip_trans.head<3>();
+    //     Eigen::Vector3d current_pos = fk_col4.head<3>();
+    //     Eigen::Vector3d goal_vec=goal_pos-current_pos;
+    //     double distance=goal_vec.norm();
+    //     if (distance<0.01){
+    //         break;
+    //     }
 
-        Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
-        Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
+    //     Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
+    //     Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
 
-        Eigen::Vector3d next_pos=current_pos+direction;
+    //     Eigen::Vector3d next_pos=current_pos+direction;
 
-        Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
-        std::cout << "[nearest point to next_pos] " << nearest_point.transpose() << std::endl;
+    //     Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
+    //     std::cout << "[nearest point to next_pos] " << nearest_point.transpose() << std::endl;
 
-        Eigen::Matrix<double, 6,1> movement;
-        movement<<nearest_point-current_pos,0,0,0;
-        std::cout<<"movement : "<<movement<<std::endl;
+    //     Eigen::Matrix<double, 6,1> movement;
+    //     movement<<nearest_point-current_pos,0,0,0;
+    //     std::cout<<"movement : "<<movement<<std::endl;
 
-        //rate.sleep();
-    }
+    //     //rate.sleep();
+    // }
 
     rclcpp::shutdown();
     return 0;
