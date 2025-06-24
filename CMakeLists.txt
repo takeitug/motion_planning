@@ -57,6 +57,10 @@ install(DIRECTORY include/
   DESTINATION include/
 )
 
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}
+)
+
 # 実行ファイル・ライブラリのインストール
 install(TARGETS
   joint_state_listener
