@@ -142,7 +142,7 @@ private:
         //std::cout<<"manipulability:\n"<<manip<<std::endl;
         //std::cout << "trace:\n" << trace_vec << std::endl;
         //std::cout << "gradient:\n" << manipulability_gradient << std::endl;
-        std::cout << "FK:\n" << FK << std::endl;
+        //std::cout << "FK:\n" << FK << std::endl;
     }
 
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr subscription_;

@@ -12,6 +12,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(moveit_ros_planning_interface REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -48,6 +49,9 @@ ament_target_dependencies(joint_state_listener rclcpp sensor_msgs Eigen3 std_msg
 add_executable(manipulability_planner src/manipulability_planner.cpp)
 ament_target_dependencies(manipulability_planner rclcpp sensor_msgs Eigen3 std_msgs geometry_msgs)
 
+add_executable(manipulability_planner_sim src/manipulability_planner_sim.cpp)
+ament_target_dependencies(manipulability_planner_sim rclcpp sensor_msgs Eigen3 std_msgs geometry_msgs moveit_ros_planning_interface)
+
 # ヘッダファイルのインストール
 install(DIRECTORY include/
   DESTINATION include/
@@ -58,6 +62,7 @@ install(TARGETS
   joint_state_listener
   manipulability_lib
   manipulability_planner
+  manipulability_planner_sim
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -1,0 +1,272 @@
+#include <memory>
+#include <iostream>
+#include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/float64.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
+#include "eigen3/Eigen/Dense"
+
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <std_msgs/msg/bool.hpp>
+#include <sensor_msgs/point_cloud2_iterator.hpp>
+#include <limits>
+#include <thread>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+
+#include <geometry_msgs/msg/pose.hpp>
+#include <moveit/move_group_interface/move_group_interface.h>
+
+class ManipulabilityPlanner : public rclcpp::Node
+{
+public:
+    ManipulabilityPlanner()
+    : Node("manipulability_planner"),
+      manip_(0.0),
+      manip_trans_(Eigen::VectorXd::Zero(6)),
+      fk_mat_(Eigen::Matrix4d::Zero()),
+      fk_col4_(Eigen::Vector4d::Zero()),
+      got_pointcloud_(false),
+      got_marker1_(false),
+      got_marker2_(false)
+    {
+        manip_sub_ = this->create_subscription<std_msgs::msg::Float64>(
+            "manipulability", 10,
+            [this](const std_msgs::msg::Float64::SharedPtr msg) {
+                manip_ = msg->data;
+            });
+
+        manip_trans_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
+            "manipulability_trans", 10,
+            [this](const std_msgs::msg::Float64MultiArray::SharedPtr msg) {
+                if (msg->data.size() == 6)
+                    manip_trans_ = Eigen::Map<const Eigen::VectorXd>(msg->data.data(), 6);
+            });
+
+        fk_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
+            "fk_matrix", 10,
+            [this](const std_msgs::msg::Float64MultiArray::SharedPtr msg) {
+                if (msg->data.size() == 16) {
+                    fk_mat_ = Eigen::Map<const Eigen::Matrix<double, 4, 4, Eigen::RowMajor>>(msg->data.data());
+                    fk_col4_ = fk_mat_.col(3);
+                }
+            });
+        
+        pointcloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+            "/capsule_cloud_transformed", 10,
+            [this](const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+                if (!got_pointcloud_) {
+                    parse_pointcloud(*msg);
+                    got_pointcloud_ = true;
+                    RCLCPP_INFO(this->get_logger(), "PointCloud received!");
+
+                    // 停止合図パブリッシュ
+                    std_msgs::msg::Bool sig;
+                    sig.data = true;
+                    pointcloud_acquired_pub_->publish(sig);
+                }
+            });
+
+        marker1_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+            "/marker1_pose", 10,
+            [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
+                if (!got_marker1_) {
+                    marker1_pos_ << msg->pose.position.x, msg->pose.position.y, msg->pose.position.z;
+                    got_marker1_ = true;
+                    RCLCPP_INFO(this->get_logger(), "marker1 received!");
+                }
+            });
+
+        marker2_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+            "/marker2_pose", 10,
+            [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
+                if (!got_marker2_) {
+                    marker2_pos_ << msg->pose.position.x, msg->pose.position.y, msg->pose.position.z;
+                    got_marker2_ = true;
+                    RCLCPP_INFO(this->get_logger(), "marker2 received!");
+                }
+            });
+
+        // 停止合図のパブリッシャ
+        pointcloud_acquired_pub_ = this->create_publisher<std_msgs::msg::Bool>("/pointcloud_acquired", 1);
+    }
+
+    // PointCloud2→Eigen行列（Nx3）
+    void parse_pointcloud(const sensor_msgs::msg::PointCloud2 & msg) {
+        size_t n = msg.width * msg.height;
+        saved_cloud_mat_.resize(n, 3);
+        sensor_msgs::PointCloud2ConstIterator<float> iter_x(msg, "x");
+        sensor_msgs::PointCloud2ConstIterator<float> iter_y(msg, "y");
+        sensor_msgs::PointCloud2ConstIterator<float> iter_z(msg, "z");
+        for (size_t i = 0; i < n; ++i, ++iter_x, ++iter_y, ++iter_z) {
+            saved_cloud_mat_(i, 0) = *iter_x;
+            saved_cloud_mat_(i, 1) = *iter_y;
+            saved_cloud_mat_(i, 2) = *iter_z;
+        }
+    }
+
+    // 最近傍点を抽出
+    Eigen::Vector3d get_nearest_point(const Eigen::Vector3d& next_pos) const {
+        if (!got_pointcloud_) return Eigen::Vector3d::Zero();
+        Eigen::Vector3f next_pos_f = next_pos.cast<float>();
+        Eigen::MatrixXf diff = saved_cloud_mat_.rowwise() - next_pos_f.transpose();
+        Eigen::VectorXf dists = diff.rowwise().norm();
+        Eigen::Index minIndex;
+        float minDist = dists.minCoeff(&minIndex);
+        // float型（行列）→ double型（ベクトル）にキャストして返す
+        return saved_cloud_mat_.row(minIndex).cast<double>();
+    }
+
+    double get_manip() const { return manip_; }
+    Eigen::VectorXd get_manip_trans() const { return manip_trans_; }
+    Eigen::Vector4d get_fk_col4() const { return fk_col4_; }
+    Eigen::Matrix4d get_fk_mat() const { return fk_mat_; }
+
+    bool got_pointcloud() const { return got_pointcloud_; }
+    const sensor_msgs::msg::PointCloud2 & get_pointcloud() const { return saved_cloud_; }
+    bool got_marker1() const { return got_marker1_; }
+    bool got_marker2() const { return got_marker2_; }
+    Eigen::Vector3d get_marker1() const { return marker1_pos_; }
+    Eigen::Vector3d get_marker2() const { return marker2_pos_; }
+
+    Eigen::Vector3d potential(const Eigen::Vector3d& current_pos, const Eigen::Vector3d& goal_pos, const double distance) {
+        Eigen::Vector3d goal_vec;
+        double goal_norm = 1.0 / distance;
+
+        Eigen::Vector3d calc_pos = current_pos;
+        calc_pos[0] += 0.01;
+        goal_vec = goal_pos - calc_pos;
+        double goal_x_norm = 1.0 / goal_vec.norm();
+
+        calc_pos = current_pos;
+        calc_pos[1] += 0.01;
+        goal_vec = goal_pos - calc_pos;
+        double goal_y_norm = 1.0 / goal_vec.norm();
+
+        calc_pos = current_pos;
+        calc_pos[2] += 0.01;
+        goal_vec = goal_pos - calc_pos;
+        double goal_z_norm = 1.0 / goal_vec.norm();
+
+        Eigen::Vector3d direc;
+        direc[0] = goal_x_norm - goal_norm;
+        direc[1] = goal_y_norm - goal_norm;
+        direc[2] = goal_z_norm - goal_norm;
+
+        return -direc;
+    }
+
+private:
+    double manip_;
+    Eigen::VectorXd manip_trans_;  // size 6
+    Eigen::Matrix4d fk_mat_;       // 4x4
+    Eigen::Vector4d fk_col4_;      // 4x1
+    rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr manip_sub_;
+    rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr manip_trans_sub_;
+    rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr fk_sub_;
+
+    Eigen::MatrixXf saved_cloud_mat_; // Nx3
+    Eigen::Vector3d marker1_pos_;
+    Eigen::Vector3d marker2_pos_;
+    bool got_pointcloud_;
+    bool got_marker1_, got_marker2_;
+    sensor_msgs::msg::PointCloud2 saved_cloud_;
+    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud_sub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr pointcloud_acquired_pub_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr marker1_sub_, marker2_sub_;
+};
+
+int main(int argc, char * argv[])
+{
+    rclcpp::init(argc, argv);
+    auto node = std::make_shared<ManipulabilityPlanner>();
+
+    // 点群が来るまで待機
+    // while (rclcpp::ok() && (!node->got_pointcloud() || !node->got_marker1() || !node->got_marker2())) {
+    //     rclcpp::spin_some(node);
+    //     std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    // }
+
+    // Eigen::Vector3d start_pos=node->get_marker1();
+    // Eigen::Vector3d goal_pos=node->get_marker2();
+
+    // MoveItのセットアップ
+    auto moveit_node = rclcpp::Node::make_shared("moveit_commander");
+    moveit_node->declare_parameter("robot_name", "lbr");
+    std::string robot_name = moveit_node->get_parameter("robot_name").as_string();
+
+    auto move_group_interface = moveit::planning_interface::MoveGroupInterface(
+        moveit_node,
+        moveit::planning_interface::MoveGroupInterface::Options("arm", "robot_description", robot_name)
+    );
+
+    //geometry_msgs::msg::Pose current_pose = move_group_interface.getCurrentPose().pose;
+
+    // ARマーカー位置を目標姿勢としてセット
+    geometry_msgs::msg::Pose target_pose;
+    // target_pose.position.x = start_pos.x();
+    // target_pose.position.y = start_pos.y();
+    // target_pose.position.z = start_pos.z();
+    target_pose.position.x = 0.02;
+    target_pose.position.y = 0.393;
+    target_pose.position.z = 0.985;
+    target_pose.orientation.w = 1.0;
+    target_pose.orientation.x = 0.0;
+    target_pose.orientation.y = 0.0;
+    target_pose.orientation.z = 0.0;
+    move_group_interface.setPoseTarget(target_pose);
+
+    // Waypoints作成
+    std::vector<geometry_msgs::msg::Pose> waypoints;
+    waypoints.push_back(target_pose);
+
+    // Cartesian Path計画
+    moveit_msgs::msg::RobotTrajectory trajectory;
+    const double eef_step = 0.01;       // 1cm刻み
+    const double jump_threshold = 0.0;  // joint-spaceジャンプしない
+    double fraction = move_group_interface.computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
+
+    if (fraction > 0.99) {
+        moveit::planning_interface::MoveGroupInterface::Plan plan;
+        plan.trajectory_ = trajectory;
+        move_group_interface.execute(plan);
+        RCLCPP_INFO(moveit_node->get_logger(), "Cartesian path executed to AR marker1 position.");
+    } else {
+        RCLCPP_ERROR(moveit_node->get_logger(), "Cartesian path planning failed. Fraction: %.2f", fraction);
+    }
+
+    double coef_manip=0.5;
+    double coef_pos=1.0;
+
+    // rclcpp::Rate rate(100);
+    // while (rclcpp::ok()) {
+    //     rclcpp::spin_some(node);
+
+    //     double manip = node->get_manip();
+    //     Eigen::VectorXd manip_trans = node->get_manip_trans();
+    //     Eigen::Vector4d fk_col4 = node->get_fk_col4();
+
+    //     Eigen::Vector3d manip_direc = manip_trans.head<3>();
+    //     Eigen::Vector3d current_pos = fk_col4.head<3>();
+    //     Eigen::Vector3d goal_vec=goal_pos-current_pos;
+    //     double distance=goal_vec.norm();
+    //     if (distance<0.01){
+    //         break;
+    //     }
+
+    //     Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
+    //     Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
+
+    //     Eigen::Vector3d next_pos=current_pos+direction;
+
+    //     Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
+    //     std::cout << "[nearest point to next_pos] " << nearest_point.transpose() << std::endl;
+
+    //     Eigen::Matrix<double, 6,1> movement;
+    //     movement<<nearest_point-current_pos,0,0,0;
+    //     std::cout<<"movement : "<<movement<<std::endl;
+
+    //     rate.sleep();
+    // }
+
+    rclcpp::shutdown();
+    return 0;
+}
