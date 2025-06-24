@@ -215,34 +215,34 @@ int main(int argc, char * argv[])
     move_group_interface.setPoseTarget(target_pose);
 
     // 計画・実行
-    moveit::planning_interface::MoveGroupInterface::Plan plan;
-    auto error_code = move_group_interface.plan(plan);
+    // moveit::planning_interface::MoveGroupInterface::Plan plan;
+    // auto error_code = move_group_interface.plan(plan);
 
-    if (error_code == moveit::core::MoveItErrorCode::SUCCESS) {
-        move_group_interface.execute(plan);
-        RCLCPP_INFO(moveit_node->get_logger(), "MoveIt plan executed to AR marker1 position.");
-    } else {
-        RCLCPP_ERROR(moveit_node->get_logger(), "Failed to plan to AR marker1 position.");
-    }
+    // if (error_code == moveit::core::MoveItErrorCode::SUCCESS) {
+    //     move_group_interface.execute(plan);
+    //     RCLCPP_INFO(moveit_node->get_logger(), "MoveIt plan executed to AR marker1 position.");
+    // } else {
+    //     RCLCPP_ERROR(moveit_node->get_logger(), "Failed to plan to AR marker1 position.");
+    // }
 
     // Waypoints作成
-    // std::vector<geometry_msgs::msg::Pose> waypoints;
-    // waypoints.push_back(target_pose);
+    std::vector<geometry_msgs::msg::Pose> waypoints;
+    waypoints.push_back(target_pose);
 
-    // // Cartesian Path計画
-    // moveit_msgs::msg::RobotTrajectory trajectory;
-    // const double eef_step = 0.01;       // 1cm刻み
-    // const double jump_threshold = 0.0;  // joint-spaceジャンプしない
-    // double fraction = move_group_interface.computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
+    // Cartesian Path計画
+    moveit_msgs::msg::RobotTrajectory trajectory;
+    const double eef_step = 0.01;       // 1cm刻み
+    const double jump_threshold = 0.0;  // joint-spaceジャンプしない
+    double fraction = move_group_interface.computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
 
-    // if (fraction > 0.99) {
-    //     moveit::planning_interface::MoveGroupInterface::Plan plan;
-    //     plan.trajectory_ = trajectory;
-    //     move_group_interface.execute(plan);
-    //     RCLCPP_INFO(moveit_node->get_logger(), "Cartesian path executed to AR marker1 position.");
-    // } else {
-    //     RCLCPP_ERROR(moveit_node->get_logger(), "Cartesian path planning failed. Fraction: %.2f", fraction);
-    // }
+    if (fraction > 0.99) {
+        moveit::planning_interface::MoveGroupInterface::Plan plan;
+        plan.trajectory_ = trajectory;
+        move_group_interface.execute(plan);
+        RCLCPP_INFO(moveit_node->get_logger(), "Cartesian path executed to AR marker1 position.");
+    } else {
+        RCLCPP_ERROR(moveit_node->get_logger(), "Cartesian path planning failed. Fraction: %.2f", fraction);
+    }
 
     double coef_manip=0.5;
     double coef_pos=1.0;

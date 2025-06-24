@@ -11,8 +11,8 @@ from lbr_bringup.moveit import LBRMoveGroupMixin
 def hidden_setup(context: LaunchContext) -> List[LaunchDescriptionEntity]:
     ld = LaunchDescription()
 
-    model = LaunchConfiguration("model").perform(context)
-    mode = LaunchConfiguration("mode").perform(context)
+    model = "iiwa7"
+    mode = "mock"
     use_sim_time = False
     if mode == "gazebo":
         use_sim_time = True
