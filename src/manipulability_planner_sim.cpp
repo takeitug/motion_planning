@@ -12,10 +12,6 @@
 #include <thread>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 
-#include <geometry_msgs/msg/pose.hpp>
-#include <moveit/move_group_interface/move_group_interface.h>
-#include <moveit/robot_trajectory/robot_trajectory.h>
-
 class ManipulabilityPlanner : public rclcpp::Node
 {
 public:
@@ -88,6 +84,8 @@ public:
 
         // 停止合図のパブリッシャ
         pointcloud_acquired_pub_ = this->create_publisher<std_msgs::msg::Bool>("/pointcloud_acquired", 1);
+        destination_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("destination", 10);
+        execution_pub_ = this->create_publisher<std_msgs::msg::Bool>("/execution", 1);
     }
 
     // PointCloud2→Eigen行列（Nx3）
@@ -173,155 +171,88 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud_sub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr pointcloud_acquired_pub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr marker1_sub_, marker2_sub_;
+
+    rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr destination_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr execution_pub_;
 };
 
 int main(int argc, char * argv[])
 {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<ManipulabilityPlanner>();
+    bool execution_=false;
 
     // 点群が来るまで待機
     // while (rclcpp::ok() && (!node->got_pointcloud() || !node->got_marker1() || !node->got_marker2())) {
     //     rclcpp::spin_some(node);
+    //     execution_pub->publish(execution_);
     //     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     // }
 
     // Eigen::Vector3d start_pos=node->get_marker1();
     // Eigen::Vector3d goal_pos=node->get_marker2();
+
+    Eigen::Vector3d start_pos;
+    start_pos<<0.02,0.393,0.985;
     Eigen::Vector3d goal_pos;
-    goal_pos<<0.3,0.393,0.985;
+    goal_pos<<0.42,0.393,0.985;
 
-    // MoveItのセットアップ
-    auto moveit_node = rclcpp::Node::make_shared("moveit_commander");
-    moveit_node->declare_parameter("robot_name", "lbr");
-    std::string robot_name = moveit_node->get_parameter("robot_name").as_string();
+    execution_=true;
+    while(rclcpp::ok()){
+        rclcpp::spin_some(node);
+        execution_pub->publish(execution_);
 
-    auto move_group_interface = moveit::planning_interface::MoveGroupInterface(
-        moveit_node,
-        moveit::planning_interface::MoveGroupInterface::Options("arm", "robot_description", robot_name)
-    );
+        Eigen::Vector4d fk_col4 = node->get_fk_col4();
+        Eigen::Vector3d current_pos = fk_col4.head<3>();
+        std_msgs::msg::Float64MultiArray destination_msg;
+        destination_msg.data.resize(start_pos.size());
+        for (int i = 0; i < start_pos.size(); ++i) {
+            destination_msg.data[i] = start_pos(i);
+        }
+        destination_pub_->publish(destination_msg);
 
-    //geometry_msgs::msg::Pose current_pose = move_group_interface.getCurrentPose().pose;
-
-    // ARマーカー位置を目標姿勢としてセット
-    geometry_msgs::msg::Pose target_pose;
-    // target_pose.position.x = start_pos.x();
-    // target_pose.position.y = start_pos.y();
-    // target_pose.position.z = start_pos.z();
-    target_pose.position.x = 0.02;
-    target_pose.position.y = 0.393;
-    target_pose.position.z = 0.985;
-    target_pose.orientation.w = 1.0;
-    target_pose.orientation.x = 0.0;
-    target_pose.orientation.y = 0.0;
-    target_pose.orientation.z = 0.0;
-    move_group_interface.setPoseTarget(target_pose);
-
-    // 計画・実行
-    moveit::planning_interface::MoveGroupInterface::Plan plan;
-    auto error_code = move_group_interface.plan(plan);
-
-    if (error_code == moveit::core::MoveItErrorCode::SUCCESS) {
-        move_group_interface.execute(plan);
-        RCLCPP_INFO(moveit_node->get_logger(), "MoveIt plan executed to AR marker1 position.");
-    } else {
-        RCLCPP_ERROR(moveit_node->get_logger(), "Failed to plan to AR marker1 position.");
+        Eigen::Vector3d dist_vec=start_pos-current_pos;
+        double dist=norm(dist_vec);
+        if(dist<0.01){
+            execution_=false;
+            execution_pub->publish(execution_);
+            break;
+        }
     }
-
-    // Waypoints作成
-    // std::vector<geometry_msgs::msg::Pose> waypoints;
-    // waypoints.push_back(target_pose);
-
-    // // Cartesian Path計画
-    // moveit_msgs::msg::RobotTrajectory trajectory;
-    // const double eef_step = 0.01;
-    // const double jump_threshold = 0.0;
-    // double fraction = move_group_interface.computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
-    
-    // if (fraction > 0.99) {
-    //     moveit::planning_interface::MoveGroupInterface::Plan plan;
-    //     plan.trajectory_ = trajectory;
-    //     move_group_interface.execute(plan);
-    //     RCLCPP_INFO(moveit_node->get_logger(), "Cartesian path executed to AR marker1 position.");
-    // } else {
-    //     RCLCPP_ERROR(moveit_node->get_logger(), "Cartesian path planning failed. Fraction: %.2f", fraction);
-    // }
-
-    std::cout << "empty" << std::endl;
-    //std::cout << last_point.positions[0] << std::endl;
-
-    // if (!trajectory.joint_trajectory.points.empty()) {
-    //     const auto& last_point = trajectory.joint_trajectory.points.back();
-    //     const auto& joint_names = trajectory.joint_trajectory.joint_names;
-    //     const auto& joint_angles = last_point.positions;
-
-    //     std::cout << "到達点の関節角度:" << std::endl;
-    //     for (size_t i = 0; i < joint_angles.size(); ++i) {
-    //         std::cout << joint_names[i] << ": " << joint_angles[i] << std::endl;
-    //     }
-    // }else{
-    //     std::cout << "empty" << std::endl;
-    // }
-
-    // if (fraction > 0.99) {
-    //     moveit::planning_interface::MoveGroupInterface::Plan plan;
-
-    //     // 1. RobotTrajectoryをMoveIt型に
-    //     robot_trajectory::RobotTrajectory rt(
-    //         move_group_interface.getCurrentState()->getRobotModel(),
-    //         move_group_interface.getName());
-    //     rt.setRobotTrajectoryMsg(*move_group_interface.getCurrentState(), trajectory);
-
-    //     // 2. 時間パラメータ付与（例: 0.1=10%の速度で）
-    //     double velocity_scaling = 0.1;         // 安全速度
-    //     double acceleration_scaling = 0.1;     // 安全加速度
-    //     trajectory_processing::IterativeParabolicTimeParameterization iptp;
-    //     bool success = iptp.computeTimeStamps(rt, velocity_scaling, acceleration_scaling);
-
-    //     // 3. 再度planに戻す
-    //     rt.getRobotTrajectoryMsg(plan.trajectory_);
-
-    //     // 4. 実行
-    //     move_group_interface.execute(plan);
-
-    //     RCLCPP_INFO(moveit_node->get_logger(), "Cartesian path executed at scaled speed to AR marker1 position.");
-    // } else {
-    //     RCLCPP_ERROR(moveit_node->get_logger(), "Cartesian path planning failed. Fraction: %.2f", fraction);
-    // }
 
     double coef_manip=0.5;
     double coef_pos=1.0;
 
-    // rclcpp::Rate rate(100);
-    // while (rclcpp::ok()) {
-    //     rclcpp::spin_some(node);
+    rclcpp::Rate rate(100);
+    while (rclcpp::ok()) {
+        rclcpp::spin_some(node);
 
-    //     double manip = node->get_manip();
-    //     Eigen::VectorXd manip_trans = node->get_manip_trans();
-    //     Eigen::Vector4d fk_col4 = node->get_fk_col4();
+        double manip = node->get_manip();
+        Eigen::VectorXd manip_trans = node->get_manip_trans();
+        Eigen::Vector4d fk_col4 = node->get_fk_col4();
 
-    //     Eigen::Vector3d manip_direc = manip_trans.head<3>();
-    //     Eigen::Vector3d current_pos = fk_col4.head<3>();
-    //     Eigen::Vector3d goal_vec=goal_pos-current_pos;
-    //     double distance=goal_vec.norm();
-    //     if (distance<0.01){
-    //         break;
-    //     }
+        Eigen::Vector3d manip_direc = manip_trans.head<3>();
+        Eigen::Vector3d current_pos = fk_col4.head<3>();
+        Eigen::Vector3d goal_vec=goal_pos-current_pos;
+        double distance=goal_vec.norm();
+        if (distance<0.01){
+            break;
+        }
 
-    //     Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
-    //     Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
+        Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
+        Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
 
-    //     Eigen::Vector3d next_pos=current_pos+direction;
+        Eigen::Vector3d next_pos=current_pos+direction;
 
-    //     Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
-    //     std::cout << "[nearest point to next_pos] " << nearest_point.transpose() << std::endl;
+        Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
+        std::cout << "[nearest point to next_pos] " << nearest_point.transpose() << std::endl;
 
-    //     Eigen::Matrix<double, 6,1> movement;
-    //     movement<<nearest_point-current_pos,0,0,0;
-    //     std::cout<<"movement : "<<movement<<std::endl;
+        Eigen::Matrix<double, 6,1> movement;
+        movement<<nearest_point-current_pos,0,0,0;
+        std::cout<<"movement : "<<movement<<std::endl;
 
-    //     //rate.sleep();
-    // }
+        rate.sleep();
+    }
 
     rclcpp::shutdown();
     return 0;

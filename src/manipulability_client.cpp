@@ -31,9 +31,11 @@ public:
     Eigen::VectorXd manipulability_gradient_;
     Eigen::Matrix<double, 6, 7> J_trans_;
     Eigen::VectorXd manipulability_trans_;
+    bool execution_;
+    Eigen::Vector3d destination_;
 
     ManipulabilityClient()
-    : Node("joint_state_listener"), mapping_initialized_(false)
+    : Node("manipulability_client"), mapping_initialized_(false)
     {
         desired_order_ = {
             "lbr_A1", "lbr_A2", "lbr_A3", "lbr_A4", "lbr_A5", "lbr_A6", "lbr_A7"
@@ -46,6 +48,22 @@ public:
         manip_pub_ = this->create_publisher<std_msgs::msg::Float64>("manipulability", 10);
         manip_trans_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("manipulability_trans", 10);
         fk_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("fk_matrix", 10);
+
+        execution_ = false;
+        destination_ = Eigen::Vector3d::Zero();
+        execution_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+            "/execution", 10,
+            [this](const std_msgs::msg::Bool::SharedPtr msg) {
+                execution_ = msg->data;
+            });
+        destination_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
+            "/destination", 10,
+            [this](const std_msgs::msg::Float64MultiArray::SharedPtr msg) {
+                if (msg->data.size() >= 3) {
+                    for (int i = 0; i < 3; ++i)
+                        destination_(i) = msg->data[i];
+                }
+            });
     }
 
     void process()
@@ -130,6 +148,9 @@ public:
     bool mapping_initialized_;
 
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr subscription_;
+
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr execution_sub_;
+    rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr destination_sub_;
 };
 
 int main(int argc, char * argv[])
@@ -137,6 +158,74 @@ int main(int argc, char * argv[])
     rclcpp::init(argc, argv);
     auto node = std::make_shared<ManipulabilityClient>();
     rclcpp::Rate rate(100);  // 100Hz
+
+    bool prev_execution = false;
+
+    while (rclcpp::ok()) {
+        rclcpp::spin_some(node);
+        node->process();
+
+        if (node->execution_ && !prev_execution) {
+            prev_execution=true;
+            break;
+        }
+        prev_execution = node->execution_;
+
+        rate.sleep();
+    }
+    Eigen::Vector3d dest=node->destination_;
+    Eigen::VectorXd joints=node->joints_
+    Eigen::Matrix<double,4,4> FK=node->FK_;
+    Eigen::Vector3d current;
+    current<<FK(0,3),FK(1,3),FK(2,3);
+    Eigen::Matrix<double, 6, 7> J=node->J_;
+    Eigen::Matrix<double, 7, 6> J_inv=node->J_inv_;
+
+    while (rclcpp::ok()) {
+        rclcpp::spin_some(node);
+        node->process();
+
+        FK = forwardkinematics::calcfk(joints);
+        J = inversekinematics::calcJacobian(joints);
+        J_inv = inversekinematics::calcJacobianInverse(J);
+        current<<FK(0,3),FK(1,3),FK(2,3);
+
+        Eigen::Vector3d direction=dest-current;
+        double distance=norm(direction);
+        if(distance<0.01){
+            break;
+        }
+        direction=0.001*direction/distance;
+        Eigen::Matrix<double, 6, 1> move;
+        move<<direction,0,0,0;
+
+        Eigen::Matrix<double, 7, 1> q_dt=J_inv*move;
+        joints[0]+=q_dt(0,0);
+        joints[1]+=q_dt(1,0);
+        joints[2]+=q_dt(2,0);
+        joints[3]+=q_dt(3,0);
+        joints[4]+=q_dt(4,0);
+        joints[5]+=q_dt(5,0);
+        joints[6]+=q_dt(6,0);
+
+
+        rate.sleep();
+    }
+
+    ///ここで位置制御
+
+    while (rclcpp::ok()) {
+        rclcpp::spin_some(node);
+        node->process();
+
+        if (!(node->execution_) && prev_execution) {
+            prev_execution=false;
+            break;
+        }
+        prev_execution = node->execution_;
+
+        rate.sleep();
+    }
 
     while (rclcpp::ok()) {
         rclcpp::spin_some(node);
