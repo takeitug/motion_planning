@@ -218,48 +218,50 @@ int main(int argc, char * argv[])
     move_group_interface.setPoseTarget(target_pose);
 
     // 計画・実行
-    // moveit::planning_interface::MoveGroupInterface::Plan plan;
-    // auto error_code = move_group_interface.plan(plan);
+    moveit::planning_interface::MoveGroupInterface::Plan plan;
+    auto error_code = move_group_interface.plan(plan);
 
-    // if (error_code == moveit::core::MoveItErrorCode::SUCCESS) {
-    //     move_group_interface.execute(plan);
-    //     RCLCPP_INFO(moveit_node->get_logger(), "MoveIt plan executed to AR marker1 position.");
-    // } else {
-    //     RCLCPP_ERROR(moveit_node->get_logger(), "Failed to plan to AR marker1 position.");
-    // }
+    if (error_code == moveit::core::MoveItErrorCode::SUCCESS) {
+        move_group_interface.execute(plan);
+        RCLCPP_INFO(moveit_node->get_logger(), "MoveIt plan executed to AR marker1 position.");
+    } else {
+        RCLCPP_ERROR(moveit_node->get_logger(), "Failed to plan to AR marker1 position.");
+    }
 
     // Waypoints作成
-    std::vector<geometry_msgs::msg::Pose> waypoints;
-    waypoints.push_back(target_pose);
+    // std::vector<geometry_msgs::msg::Pose> waypoints;
+    // waypoints.push_back(target_pose);
 
-    // Cartesian Path計画
-    moveit_msgs::msg::RobotTrajectory trajectory;
-    const double eef_step = 0.01;
-    const double jump_threshold = 0.0;
-    double fraction = move_group_interface.computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
+    // // Cartesian Path計画
+    // moveit_msgs::msg::RobotTrajectory trajectory;
+    // const double eef_step = 0.01;
+    // const double jump_threshold = 0.0;
+    // double fraction = move_group_interface.computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
     
-    if (fraction > 0.99) {
-        moveit::planning_interface::MoveGroupInterface::Plan plan;
-        plan.trajectory_ = trajectory;
-        move_group_interface.execute(plan);
-        RCLCPP_INFO(moveit_node->get_logger(), "Cartesian path executed to AR marker1 position.");
-    } else {
-        RCLCPP_ERROR(moveit_node->get_logger(), "Cartesian path planning failed. Fraction: %.2f", fraction);
-    }
-    std::cout << last_point.positions[0] << std::endl;
+    // if (fraction > 0.99) {
+    //     moveit::planning_interface::MoveGroupInterface::Plan plan;
+    //     plan.trajectory_ = trajectory;
+    //     move_group_interface.execute(plan);
+    //     RCLCPP_INFO(moveit_node->get_logger(), "Cartesian path executed to AR marker1 position.");
+    // } else {
+    //     RCLCPP_ERROR(moveit_node->get_logger(), "Cartesian path planning failed. Fraction: %.2f", fraction);
+    // }
 
-    if (!trajectory.joint_trajectory.points.empty()) {
-        const auto& last_point = trajectory.joint_trajectory.points.back();
-        const auto& joint_names = trajectory.joint_trajectory.joint_names;
-        const auto& joint_angles = last_point.positions;
+    std::cout << "empty" << std::endl;
+    //std::cout << last_point.positions[0] << std::endl;
 
-        std::cout << "到達点の関節角度:" << std::endl;
-        for (size_t i = 0; i < joint_angles.size(); ++i) {
-            std::cout << joint_names[i] << ": " << joint_angles[i] << std::endl;
-        }
-    }else{
-        std::cout << "empty" << std::endl;
-    }
+    // if (!trajectory.joint_trajectory.points.empty()) {
+    //     const auto& last_point = trajectory.joint_trajectory.points.back();
+    //     const auto& joint_names = trajectory.joint_trajectory.joint_names;
+    //     const auto& joint_angles = last_point.positions;
+
+    //     std::cout << "到達点の関節角度:" << std::endl;
+    //     for (size_t i = 0; i < joint_angles.size(); ++i) {
+    //         std::cout << joint_names[i] << ": " << joint_angles[i] << std::endl;
+    //     }
+    // }else{
+    //     std::cout << "empty" << std::endl;
+    // }
 
     // if (fraction > 0.99) {
     //     moveit::planning_interface::MoveGroupInterface::Plan plan;
