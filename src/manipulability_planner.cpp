@@ -119,6 +119,8 @@ public:
 
     bool got_pointcloud() const { return got_pointcloud_; }
     const sensor_msgs::msg::PointCloud2 & get_pointcloud() const { return saved_cloud_; }
+    bool got_marker1() const { return got_marker1_; }
+    bool got_marker2() const { return got_marker2_; }
     Eigen::Vector3d get_marker1() const { return marker1_pos_; }
     Eigen::Vector3d get_marker2() const { return marker2_pos_; }
 
@@ -175,7 +177,7 @@ int main(int argc, char * argv[])
     auto node = std::make_shared<ManipulabilityPlanner>();
 
     // 点群が来るまで待機
-    while (rclcpp::ok() && (!node->got_pointcloud() || !node->got_marker1_ || !node->got_marker2_)) {
+    while (rclcpp::ok() && (!node->got_pointcloud() || !node->got_marker1() || !node->got_marker2())) {
         rclcpp::spin_some(node);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -202,7 +204,7 @@ int main(int argc, char * argv[])
             break;
         }
 
-        Eigen::Vector3d goal_pot=potential(current_pos, goal_pos,distance);
+        Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
         Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
 
         Eigen::Vector3d next_pos=current_pos+direction;
