@@ -13,10 +13,8 @@
 #include <geometry_msgs/msg/pose_stamped.hpp>
 
 #include <geometry_msgs/msg/pose.hpp>
-#include <moveit/move_group_interface/move_group_interface.hpp>
-#include <moveit/robot_trajectory/robot_trajectory.hpp>
-#include <moveit/trajectory_processing/time_parameterization.hpp>
-#include <moveit/trajectory_processing/iterative_time_parameterization.hpp>
+#include <moveit/move_group_interface/move_group_interface.h>
+#include <moveit/robot_trajectory/robot_trajectory.h>
 
 class ManipulabilityPlanner : public rclcpp::Node
 {
@@ -239,6 +237,8 @@ int main(int argc, char * argv[])
     const double eef_step = 0.01;
     const double jump_threshold = 0.0;
     double fraction = move_group_interface.computeCartesianPath(waypoints, eef_step, jump_threshold, trajectory);
+    const auto last_point = trajectory.joint_trajectory.points.back();
+    std::cout << last_point.positions[0] << std::endl;
 
     if (!trajectory.joint_trajectory.points.empty()) {
         const auto& last_point = trajectory.joint_trajectory.points.back();
@@ -249,6 +249,8 @@ int main(int argc, char * argv[])
         for (size_t i = 0; i < joint_angles.size(); ++i) {
             std::cout << joint_names[i] << ": " << joint_angles[i] << std::endl;
         }
+    }else{
+        std::cout << "empty" << std::endl;
     }
 
     // if (fraction > 0.99) {
