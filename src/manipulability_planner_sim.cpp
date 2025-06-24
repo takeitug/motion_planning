@@ -16,6 +16,7 @@
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <moveit/robot_trajectory/robot_trajectory.h>
 #include <moveit/trajectory_processing/time_parameterization.h>
+#include <moveit/trajectory_processing/iterative_time_parameterization.h>
 
 class ManipulabilityPlanner : public rclcpp::Node
 {
@@ -189,6 +190,8 @@ int main(int argc, char * argv[])
 
     // Eigen::Vector3d start_pos=node->get_marker1();
     // Eigen::Vector3d goal_pos=node->get_marker2();
+    Eigen::Vector3d goal_pos;
+    goal_pos<<0.3,0.393,0.985;
 
     // MoveItのセットアップ
     auto moveit_node = rclcpp::Node::make_shared("moveit_commander");
@@ -267,35 +270,35 @@ int main(int argc, char * argv[])
     double coef_pos=1.0;
 
     // rclcpp::Rate rate(100);
-    // while (rclcpp::ok()) {
-    //     rclcpp::spin_some(node);
+    while (rclcpp::ok()) {
+        rclcpp::spin_some(node);
 
-    //     double manip = node->get_manip();
-    //     Eigen::VectorXd manip_trans = node->get_manip_trans();
-    //     Eigen::Vector4d fk_col4 = node->get_fk_col4();
+        double manip = node->get_manip();
+        Eigen::VectorXd manip_trans = node->get_manip_trans();
+        Eigen::Vector4d fk_col4 = node->get_fk_col4();
 
-    //     Eigen::Vector3d manip_direc = manip_trans.head<3>();
-    //     Eigen::Vector3d current_pos = fk_col4.head<3>();
-    //     Eigen::Vector3d goal_vec=goal_pos-current_pos;
-    //     double distance=goal_vec.norm();
-    //     if (distance<0.01){
-    //         break;
-    //     }
+        Eigen::Vector3d manip_direc = manip_trans.head<3>();
+        Eigen::Vector3d current_pos = fk_col4.head<3>();
+        Eigen::Vector3d goal_vec=goal_pos-current_pos;
+        double distance=goal_vec.norm();
+        if (distance<0.01){
+            break;
+        }
 
-    //     Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
-    //     Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
+        Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
+        Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
 
-    //     Eigen::Vector3d next_pos=current_pos+direction;
+        Eigen::Vector3d next_pos=current_pos+direction;
 
-    //     Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
-    //     std::cout << "[nearest point to next_pos] " << nearest_point.transpose() << std::endl;
+        Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
+        std::cout << "[nearest point to next_pos] " << nearest_point.transpose() << std::endl;
 
-    //     Eigen::Matrix<double, 6,1> movement;
-    //     movement<<nearest_point-current_pos,0,0,0;
-    //     std::cout<<"movement : "<<movement<<std::endl;
+        Eigen::Matrix<double, 6,1> movement;
+        movement<<nearest_point-current_pos,0,0,0;
+        std::cout<<"movement : "<<movement<<std::endl;
 
-    //     rate.sleep();
-    // }
+        //rate.sleep();
+    }
 
     rclcpp::shutdown();
     return 0;
