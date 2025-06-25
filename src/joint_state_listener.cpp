@@ -143,9 +143,9 @@ int main(int argc, char * argv[])
         node->process();
 
         // main内のどこからでも変数を参照・出力できる！
-        std::cout << "manip: " << node->manip_ << std::endl;
-        std::cout << "J_inv:\n" << node->J_inv_ << std::endl;
-        std::cout << "trace_vec: " << node->trace_vec_.transpose() << std::endl;
+        // std::cout << "manip: " << node->manip_ << std::endl;
+        // std::cout << "J_inv:\n" << node->J_inv_ << std::endl;
+        // std::cout << "trace_vec: " << node->trace_vec_.transpose() << std::endl;
         // 必要に応じて他のメンバ変数も出力できます
 
         rate.sleep();

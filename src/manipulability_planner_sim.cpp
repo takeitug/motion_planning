@@ -88,6 +88,9 @@ public:
         execution_pub_ = this->create_publisher<std_msgs::msg::Bool>("/execution", 1);
     }
 
+    rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr destination_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr execution_pub_;
+
     // PointCloud2→Eigen行列（Nx3）
     void parse_pointcloud(const sensor_msgs::msg::PointCloud2 & msg) {
         size_t n = msg.width * msg.height;
@@ -171,22 +174,23 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud_sub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr pointcloud_acquired_pub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr marker1_sub_, marker2_sub_;
-
-    rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr destination_pub_;
-    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr execution_pub_;
 };
 
 int main(int argc, char * argv[])
 {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<ManipulabilityPlanner>();
+    rclcpp::Rate rate(100);
     bool execution_=false;
+    std_msgs::msg::Bool execution_msg;
+    execution_msg.data=false;
 
     // 点群が来るまで待機
     // while (rclcpp::ok() && (!node->got_pointcloud() || !node->got_marker1() || !node->got_marker2())) {
     //     rclcpp::spin_some(node);
-    //     execution_pub_->publish(execution_);
+    //     node->execution_pub_->publish(execution_msg);
     //     std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    //     std::cout<<"waiting for pointcloud "<<std::endl;
     // }
 
     // Eigen::Vector3d start_pos=node->get_marker1();
@@ -198,61 +202,64 @@ int main(int argc, char * argv[])
     goal_pos<<0.42,0.393,0.985;
 
     execution_=true;
+    execution_msg.data=true;
     while(rclcpp::ok()){
         rclcpp::spin_some(node);
-        execution_pub_->publish(execution_);
+        node->execution_pub_->publish(execution_msg);
 
         Eigen::Vector4d fk_col4 = node->get_fk_col4();
         Eigen::Vector3d current_pos = fk_col4.head<3>();
         std_msgs::msg::Float64MultiArray destination_msg;
         destination_msg.data.resize(start_pos.size());
         for (int i = 0; i < start_pos.size(); ++i) {
-            destination_msg.data[i] = start_pos(i);
+            destination_msg.data[i] = start_pos[i];
         }
-        destination_pub_->publish(destination_msg);
+        node->destination_pub_->publish(destination_msg);
 
         Eigen::Vector3d dist_vec=start_pos-current_pos;
         double dist=dist_vec.norm();
         if(dist<0.01){
             execution_=false;
-            execution_pub_->publish(execution_);
+            execution_msg.data=false;
+            node->execution_pub_->publish(execution_msg);
             break;
         }
+        std::cout<<"here ! "<<dist<<std::endl;
+        rate.sleep();
     }
 
     double coef_manip=0.5;
     double coef_pos=1.0;
 
-    rclcpp::Rate rate(100);
-    while (rclcpp::ok()) {
-        rclcpp::spin_some(node);
+    // while (rclcpp::ok()) {
+    //     rclcpp::spin_some(node);
 
-        double manip = node->get_manip();
-        Eigen::VectorXd manip_trans = node->get_manip_trans();
-        Eigen::Vector4d fk_col4 = node->get_fk_col4();
+    //     double manip = node->get_manip();
+    //     Eigen::VectorXd manip_trans = node->get_manip_trans();
+    //     Eigen::Vector4d fk_col4 = node->get_fk_col4();
 
-        Eigen::Vector3d manip_direc = manip_trans.head<3>();
-        Eigen::Vector3d current_pos = fk_col4.head<3>();
-        Eigen::Vector3d goal_vec=goal_pos-current_pos;
-        double distance=goal_vec.norm();
-        if (distance<0.01){
-            break;
-        }
+    //     Eigen::Vector3d manip_direc = manip_trans.head<3>();
+    //     Eigen::Vector3d current_pos = fk_col4.head<3>();
+    //     Eigen::Vector3d goal_vec=goal_pos-current_pos;
+    //     double distance=goal_vec.norm();
+    //     if (distance<0.01){
+    //         break;
+    //     }
 
-        Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
-        Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
+    //     Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
+    //     Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
 
-        Eigen::Vector3d next_pos=current_pos+direction;
+    //     Eigen::Vector3d next_pos=current_pos+direction;
 
-        Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
-        std::cout << "[nearest point to next_pos] " << nearest_point.transpose() << std::endl;
+    //     Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
+    //     std::cout << "[nearest point to next_pos] " << nearest_point.transpose() << std::endl;
 
-        Eigen::Matrix<double, 6,1> movement;
-        movement<<nearest_point-current_pos,0,0,0;
-        std::cout<<"movement : "<<movement<<std::endl;
+    //     Eigen::Matrix<double, 6,1> movement;
+    //     movement<<nearest_point-current_pos,0,0,0;
+    //     std::cout<<"movement : "<<movement<<std::endl;
 
-        rate.sleep();
-    }
+    //     rate.sleep();
+    // }
 
     rclcpp::shutdown();
     return 0;
