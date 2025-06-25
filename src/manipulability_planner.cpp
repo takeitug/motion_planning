@@ -126,29 +126,29 @@ public:
 
     Eigen::Vector3d potential(const Eigen::Vector3d& current_pos, const Eigen::Vector3d& goal_pos, const double distance) {
         Eigen::Vector3d goal_vec;
-        double goal_norm = 1.0 / distance;
+        double goal_norm = 1.0 / sqrt(distance);
 
         Eigen::Vector3d calc_pos = current_pos;
         calc_pos[0] += 0.01;
         goal_vec = goal_pos - calc_pos;
-        double goal_x_norm = 1.0 / goal_vec.norm();
+        double goal_x_norm = 1.0 / sqrt(goal_vec.norm());
 
         calc_pos = current_pos;
         calc_pos[1] += 0.01;
         goal_vec = goal_pos - calc_pos;
-        double goal_y_norm = 1.0 / goal_vec.norm();
+        double goal_y_norm = 1.0 / sqrt(goal_vec.norm());
 
         calc_pos = current_pos;
         calc_pos[2] += 0.01;
         goal_vec = goal_pos - calc_pos;
-        double goal_z_norm = 1.0 / goal_vec.norm();
+        double goal_z_norm = 1.0 / sqrt(goal_vec.norm());
 
         Eigen::Vector3d direc;
         direc[0] = goal_x_norm - goal_norm;
         direc[1] = goal_y_norm - goal_norm;
         direc[2] = goal_z_norm - goal_norm;
 
-        return -direc;
+        return direc;
     }
 
 private:

@@ -1,26 +1,41 @@
 #include <chrono>
 #include <memory>
 #include <vector>
+#include <string>
 #include <iostream>
+#include <thread>
+#include <algorithm>
+
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp_action/rclcpp_action.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <std_msgs/msg/float64.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
+#include <std_msgs/msg/bool.hpp>
+#include <trajectory_msgs/msg/joint_trajectory_point.hpp>
 #include "eigen3/Eigen/Dense"
 
 #include "motion_planning/inverse.h"
 #include "motion_planning/manipulability_gradient.h"
 #include "motion_planning/forward.h"
 
-#include <algorithm>
-#include <std_msgs/msg/float64.hpp>
-#include <std_msgs/msg/float64_multi_array.hpp>
-#include <std_msgs/msg/bool.hpp>
+#include "control_msgs/action/follow_joint_trajectory.hpp"
+#include "controller_manager_msgs/srv/switch_controller.hpp"
+#include "controller_manager_msgs/srv/load_controller.hpp"
+#include "controller_manager_msgs/srv/configure_controller.hpp"
 
-using namespace std::chrono_literals;
+#define PI 3.14159265358979323846
+double rad2deg(double radians) {
+    return radians * (180.0 / PI);
+}
+double deg2rad(double degrees) {
+    return degrees * (PI / 180.0);
+}
 
 class ManipulabilityClient : public rclcpp::Node
 {
 public:
-    // 主要な中間値や計算結果を全てpublicメンバ変数として宣言
+    // --- 主要な中間値や計算結果 ---
     std::vector<double> last_position_;
     Eigen::VectorXd joints_;
     Eigen::Matrix<double,4,4> FK_;
@@ -34,6 +49,12 @@ public:
     Eigen::VectorXd manipulability_trans_;
     bool execution_;
     Eigen::Vector3d destination_;
+
+    // --- JointTrajectoryClient関連 ---
+    rclcpp_action::Client<control_msgs::action::FollowJointTrajectory>::SharedPtr joint_trajectory_action_client_;
+    rclcpp::Client<controller_manager_msgs::srv::SwitchController>::SharedPtr switch_controller_client_;
+    rclcpp::Client<controller_manager_msgs::srv::LoadController>::SharedPtr load_controller_client_;
+    rclcpp::Client<controller_manager_msgs::srv::ConfigureController>::SharedPtr configure_controller_client_;
 
     ManipulabilityClient()
     : Node("manipulability_client"), mapping_initialized_(false)
@@ -65,6 +86,33 @@ public:
                         destination_(i) = msg->data[i];
                 }
             });
+
+        // --- JointTrajectoryClient 初期化 ---
+        joint_trajectory_action_client_ =
+            rclcpp_action::create_client<control_msgs::action::FollowJointTrajectory>(
+                this, "/lbr/joint_trajectory_controller/follow_joint_trajectory");
+
+        switch_controller_client_ =
+            this->create_client<controller_manager_msgs::srv::SwitchController>(
+                "/lbr/controller_manager/switch_controller");
+
+        load_controller_client_ =
+            this->create_client<controller_manager_msgs::srv::LoadController>(
+                "/lbr/controller_manager/load_controller");
+
+        configure_controller_client_ =
+            this->create_client<controller_manager_msgs::srv::ConfigureController>(
+                "/lbr/controller_manager/configure_controller");
+
+        while (!joint_trajectory_action_client_->wait_for_action_server(std::chrono::seconds(1))) {
+            if (!rclcpp::ok()) {
+                RCLCPP_ERROR(this->get_logger(),
+                    "Interrupted while waiting for the action server. Exiting.");
+                return;
+            }
+            RCLCPP_INFO(this->get_logger(), "Waiting for action server to become available...");
+        }
+        RCLCPP_INFO(this->get_logger(), "Action server available.");
     }
 
     void process()
@@ -114,7 +162,143 @@ public:
         fk_pub_->publish(fk_msg);
     }
 
-    // サブスクライバコールバック（このまま）
+    void execute(const std::vector<double> &positions, const int32_t &sec_from_start = 10) {
+        if (positions.size() != 7) { // KUKA::FRI::LBRState::NUMBER_OF_JOINTSを使う場合は置換
+            RCLCPP_ERROR(this->get_logger(), "Invalid number of joint positions.");
+            return;
+        }
+
+        control_msgs::action::FollowJointTrajectory::Goal joint_trajectory_goal;
+        int32_t goal_sec_tolerance = 1;
+        joint_trajectory_goal.goal_time_tolerance.sec = goal_sec_tolerance;
+
+        trajectory_msgs::msg::JointTrajectoryPoint point;
+        point.positions = positions;
+        point.velocities.resize(7, 0.0);
+        point.time_from_start.sec = sec_from_start;
+
+        for (std::size_t i = 0; i < 7; ++i) {
+            joint_trajectory_goal.trajectory.joint_names.push_back("lbr_A" + std::to_string(i + 1));
+        }
+
+        joint_trajectory_goal.trajectory.points.push_back(point);
+
+        auto goal_future = joint_trajectory_action_client_->async_send_goal(joint_trajectory_goal);
+        rclcpp::spin_until_future_complete(this->get_node_base_interface(), goal_future);
+        auto goal_handle = goal_future.get();
+        if (!goal_handle) {
+            RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server.");
+            return;
+        }
+        RCLCPP_INFO(this->get_logger(), "Goal was accepted by server.");
+
+        auto result_future = joint_trajectory_action_client_->async_get_result(goal_handle);
+        rclcpp::spin_until_future_complete(this->get_node_base_interface(), result_future,
+            std::chrono::seconds(sec_from_start + goal_sec_tolerance));
+        if (result_future.get().result->error_code !=
+            control_msgs::action::FollowJointTrajectory::Result::SUCCESSFUL) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to execute joint trajectory.");
+            return;
+        }
+    }
+
+    void switch_to_twist_controller() {
+        load_controller_if_needed("twist_controller");
+        configure_controller("twist_controller");
+        while (!switch_controller_client_->wait_for_service(std::chrono::seconds(1))) {
+            if (!rclcpp::ok()) {
+                RCLCPP_ERROR(this->get_logger(), "Interrupted while waiting for service. Exiting.");
+                return;
+            }
+            RCLCPP_INFO(this->get_logger(), "Waiting for controller_manager service...");
+        }
+
+        auto request = std::make_shared<controller_manager_msgs::srv::SwitchController::Request>();
+        request->activate_controllers.push_back("twist_controller");
+        request->deactivate_controllers.push_back("joint_trajectory_controller");
+        request->strictness = 2;
+
+        auto future = switch_controller_client_->async_send_request(request);
+        rclcpp::spin_until_future_complete(this->get_node_base_interface(), future);
+
+        if (future.get()->ok) {
+            RCLCPP_INFO(this->get_logger(), "Successfully switched to twist_controller.");
+        } else {
+            RCLCPP_ERROR(this->get_logger(), "Failed to switch controllers.");
+        }
+    }
+
+    void switch_to_joint_controller() {
+        while (!switch_controller_client_->wait_for_service(std::chrono::seconds(1))) {
+            if (!rclcpp::ok()) {
+                RCLCPP_ERROR(this->get_logger(), "Interrupted while waiting for service. Exiting.");
+                return;
+            }
+            RCLCPP_INFO(this->get_logger(), "Waiting for controller_manager service...");
+        }
+
+        auto request = std::make_shared<controller_manager_msgs::srv::SwitchController::Request>();
+        request->activate_controllers.push_back("joint_trajectory_controller");
+        request->deactivate_controllers.push_back("twist_controller");
+        request->strictness = 2;
+
+        auto future = switch_controller_client_->async_send_request(request);
+        rclcpp::spin_until_future_complete(this->get_node_base_interface(), future);
+
+        if (future.get()->ok) {
+            RCLCPP_INFO(this->get_logger(), "Successfully switched to joint_controller.");
+        } else {
+            RCLCPP_ERROR(this->get_logger(), "Failed to switch controllers.");
+        }
+    }
+
+    bool load_controller_if_needed(const std::string &controller_name) {
+        if (!load_controller_client_) {
+            RCLCPP_ERROR(this->get_logger(), "load_controller_client_ is not initialized.");
+            return false;
+        }
+
+        while (!load_controller_client_->wait_for_service(std::chrono::seconds(1))) {
+            if (!rclcpp::ok()) {
+                RCLCPP_ERROR(this->get_logger(), "Interrupted while waiting for load_controller service.");
+                return false;
+            }
+            RCLCPP_INFO(this->get_logger(), "Waiting for load_controller service...");
+        }
+
+        auto request = std::make_shared<controller_manager_msgs::srv::LoadController::Request>();
+        request->name = controller_name;
+
+        auto future = load_controller_client_->async_send_request(request);
+        rclcpp::spin_until_future_complete(this->get_node_base_interface(), future);
+
+        auto response = future.get();
+        if (response && response->ok) {
+            RCLCPP_INFO(this->get_logger(), "Controller '%s' loaded successfully.", controller_name.c_str());
+            return true;
+        } else {
+            RCLCPP_ERROR(this->get_logger(), "Failed to load controller '%s'.", controller_name.c_str());
+            return false;
+        }
+    }
+
+    bool configure_controller(const std::string &name) {
+        auto request = std::make_shared<controller_manager_msgs::srv::ConfigureController::Request>();
+        request->name = name;
+
+        auto future = configure_controller_client_->async_send_request(request);
+        rclcpp::spin_until_future_complete(this->get_node_base_interface(), future);
+
+        auto response = future.get();
+        if (response && response->ok) {
+            RCLCPP_INFO(this->get_logger(), "Successfully configured controller '%s'.", name.c_str());
+            return true;
+        } else {
+            RCLCPP_ERROR(this->get_logger(), "Failed to configure controller '%s'.", name.c_str());
+            return false;
+        }
+    }
+
     void topic_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
     {
         if (!mapping_initialized_) {
@@ -139,17 +323,14 @@ public:
         }
     }
 
-    // パブリッシャなど
+    // --- 各種パブリッシャ・サブスクライバ ---
     rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr manip_pub_;
     rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr manip_trans_pub_;
     rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr fk_pub_;
-
     std::vector<std::string> desired_order_;
     std::vector<int> index_map_;
     bool mapping_initialized_;
-
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr subscription_;
-
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr execution_sub_;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr destination_sub_;
 };
@@ -162,15 +343,28 @@ int main(int argc, char * argv[])
 
     bool prev_execution = false;
 
+    RCLCPP_INFO(node->get_logger(), "goes to initial position");
+    node->execute({
+        deg2rad(-20.0),
+        deg2rad(80.0),
+        deg2rad(100.0),
+        deg2rad(-80.0),
+        deg2rad(-80.0),
+        deg2rad(-80.0),
+        deg2rad(20.0),
+    });
+
     while (rclcpp::ok()) {
         rclcpp::spin_some(node);
         node->process();
 
         if (node->execution_ && !prev_execution) {
+            //マーカーと点群が取得できたか判別
             prev_execution=true;
             break;
         }
         prev_execution = node->execution_;
+        std::cout<<"here ! "<<std::endl;
 
         rate.sleep();
     }
@@ -182,6 +376,7 @@ int main(int argc, char * argv[])
     Eigen::Matrix<double, 6, 7> J=node->J_;
     Eigen::Matrix<double, 7, 6> J_inv=node->J_inv_;
 
+    //開始位置に到達する角度を計算
     while (rclcpp::ok()) {
         rclcpp::spin_some(node);
         node->process();
@@ -193,7 +388,7 @@ int main(int argc, char * argv[])
 
         Eigen::Vector3d direction=dest-current;
         double distance=direction.norm();
-        if(distance<0.01){
+        if(distance<0.005){
             break;
         }
         direction=0.001*direction/distance;
@@ -208,13 +403,24 @@ int main(int argc, char * argv[])
         joints[4]+=q_dt(4,0);
         joints[5]+=q_dt(5,0);
         joints[6]+=q_dt(6,0);
-
+        std::cout<<"here 2! "<<distance<<std::endl;
 
         rate.sleep();
     }
 
-    ///ここで位置制御
+    ///位置制御を実行
+    RCLCPP_INFO(node->get_logger(), "goes to start position");
+    node->execute({
+        joints[0],
+        joints[1],
+        joints[2],
+        joints[3],
+        joints[4],
+        joints[5],
+        joints[6],
+    });
 
+    //追従制御の開始合図を待つ
     while (rclcpp::ok()) {
         rclcpp::spin_some(node);
         node->process();
@@ -224,21 +430,21 @@ int main(int argc, char * argv[])
             break;
         }
         prev_execution = node->execution_;
+        //std::cout<<"here 3! "<<joints<<std::endl;
 
         rate.sleep();
     }
 
+    //追従制御開始
     while (rclcpp::ok()) {
         rclcpp::spin_some(node);
         node->process();
 
-        // main内のどこからでも変数を参照・出力できる！
-        std::cout << "manip: " << node->manip_ << std::endl;
-        std::cout << "J_inv:\n" << node->J_inv_ << std::endl;
-        std::cout << "trace_vec: " << node->trace_vec_.transpose() << std::endl;
-        // 必要に応じて他のメンバ変数も出力できます
+        // std::cout << "manip: " << node->manip_ << std::endl;
+        // std::cout << "J_inv:\n" << node->J_inv_ << std::endl;
+        // std::cout << "trace_vec: " << node->trace_vec_.transpose() << std::endl;
 
-        rate.sleep();
+        //rate.sleep();
     }
 
     rclcpp::shutdown();

@@ -131,29 +131,29 @@ public:
 
     Eigen::Vector3d potential(const Eigen::Vector3d& current_pos, const Eigen::Vector3d& goal_pos, const double distance) {
         Eigen::Vector3d goal_vec;
-        double goal_norm = 1.0 / distance;
+        double goal_norm = 1.0 / sqrt(distance);
 
         Eigen::Vector3d calc_pos = current_pos;
         calc_pos[0] += 0.01;
         goal_vec = goal_pos - calc_pos;
-        double goal_x_norm = 1.0 / goal_vec.norm();
+        double goal_x_norm = 1.0 / sqrt(goal_vec.norm());
 
         calc_pos = current_pos;
         calc_pos[1] += 0.01;
         goal_vec = goal_pos - calc_pos;
-        double goal_y_norm = 1.0 / goal_vec.norm();
+        double goal_y_norm = 1.0 / sqrt(goal_vec.norm());
 
         calc_pos = current_pos;
         calc_pos[2] += 0.01;
         goal_vec = goal_pos - calc_pos;
-        double goal_z_norm = 1.0 / goal_vec.norm();
+        double goal_z_norm = 1.0 / sqrt(goal_vec.norm());
 
         Eigen::Vector3d direc;
         direc[0] = goal_x_norm - goal_norm;
         direc[1] = goal_y_norm - goal_norm;
         direc[2] = goal_z_norm - goal_norm;
 
-        return -direc;
+        return direc;
     }
 
 private:
@@ -181,7 +181,6 @@ int main(int argc, char * argv[])
     rclcpp::init(argc, argv);
     auto node = std::make_shared<ManipulabilityPlanner>();
     rclcpp::Rate rate(100);
-    bool execution_=false;
     std_msgs::msg::Bool execution_msg;
     execution_msg.data=false;
 
@@ -201,8 +200,8 @@ int main(int argc, char * argv[])
     Eigen::Vector3d goal_pos;
     goal_pos<<0.42,0.393,0.985;
 
-    execution_=true;
     execution_msg.data=true;
+    //開始位置に到達するまで待機
     while(rclcpp::ok()){
         rclcpp::spin_some(node);
         node->execution_pub_->publish(execution_msg);
@@ -218,48 +217,48 @@ int main(int argc, char * argv[])
 
         Eigen::Vector3d dist_vec=start_pos-current_pos;
         double dist=dist_vec.norm();
-        if(dist<0.01){
-            execution_=false;
+        if(dist<0.005){
+            //開始位置に到達
             execution_msg.data=false;
             node->execution_pub_->publish(execution_msg);
             break;
         }
-        std::cout<<"here ! "<<dist<<std::endl;
+        std::cout<<"here ! "<<current_pos<<std::endl;
         rate.sleep();
     }
 
     double coef_manip=0.5;
     double coef_pos=1.0;
+    //追従制御開始
+    while (rclcpp::ok()) {
+        rclcpp::spin_some(node);
 
-    // while (rclcpp::ok()) {
-    //     rclcpp::spin_some(node);
+        double manip = node->get_manip();
+        Eigen::VectorXd manip_trans = node->get_manip_trans();
+        Eigen::Vector4d fk_col4 = node->get_fk_col4();
 
-    //     double manip = node->get_manip();
-    //     Eigen::VectorXd manip_trans = node->get_manip_trans();
-    //     Eigen::Vector4d fk_col4 = node->get_fk_col4();
+        Eigen::Vector3d manip_direc = manip_trans.head<3>();
+        Eigen::Vector3d current_pos = fk_col4.head<3>();
+        Eigen::Vector3d goal_vec=goal_pos-current_pos;
+        double distance=goal_vec.norm();
+        if (distance<0.01){
+            break;
+        }
 
-    //     Eigen::Vector3d manip_direc = manip_trans.head<3>();
-    //     Eigen::Vector3d current_pos = fk_col4.head<3>();
-    //     Eigen::Vector3d goal_vec=goal_pos-current_pos;
-    //     double distance=goal_vec.norm();
-    //     if (distance<0.01){
-    //         break;
-    //     }
+        Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
+        Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
 
-    //     Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
-    //     Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
+        Eigen::Vector3d next_pos=current_pos+direction;
 
-    //     Eigen::Vector3d next_pos=current_pos+direction;
+        // Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
+        // std::cout << "[nearest point to next_pos] " << nearest_point.transpose() << std::endl;
 
-    //     Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
-    //     std::cout << "[nearest point to next_pos] " << nearest_point.transpose() << std::endl;
+        Eigen::Matrix<double, 6,1> movement;
+        //movement<<nearest_point-current_pos,0,0,0;
+        movement<<next_pos-current_pos,0,0,0;
 
-    //     Eigen::Matrix<double, 6,1> movement;
-    //     movement<<nearest_point-current_pos,0,0,0;
-    //     std::cout<<"movement : "<<movement<<std::endl;
-
-    //     rate.sleep();
-    // }
+        rate.sleep();
+    }
 
     rclcpp::shutdown();
     return 0;
