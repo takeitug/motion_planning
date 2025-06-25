@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <std_msgs/msg/float64.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
+#include <std_msgs/msg/bool.hpp>
 
 using namespace std::chrono_literals;
 
@@ -174,7 +175,7 @@ int main(int argc, char * argv[])
         rate.sleep();
     }
     Eigen::Vector3d dest=node->destination_;
-    Eigen::VectorXd joints=node->joints_
+    Eigen::VectorXd joints=node->joints_;
     Eigen::Matrix<double,4,4> FK=node->FK_;
     Eigen::Vector3d current;
     current<<FK(0,3),FK(1,3),FK(2,3);
@@ -191,7 +192,7 @@ int main(int argc, char * argv[])
         current<<FK(0,3),FK(1,3),FK(2,3);
 
         Eigen::Vector3d direction=dest-current;
-        double distance=norm(direction);
+        double distance=direction.norm();
         if(distance<0.01){
             break;
         }

@@ -185,7 +185,7 @@ int main(int argc, char * argv[])
     // 点群が来るまで待機
     // while (rclcpp::ok() && (!node->got_pointcloud() || !node->got_marker1() || !node->got_marker2())) {
     //     rclcpp::spin_some(node);
-    //     execution_pub->publish(execution_);
+    //     execution_pub_->publish(execution_);
     //     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     // }
 
@@ -200,7 +200,7 @@ int main(int argc, char * argv[])
     execution_=true;
     while(rclcpp::ok()){
         rclcpp::spin_some(node);
-        execution_pub->publish(execution_);
+        execution_pub_->publish(execution_);
 
         Eigen::Vector4d fk_col4 = node->get_fk_col4();
         Eigen::Vector3d current_pos = fk_col4.head<3>();
@@ -212,10 +212,10 @@ int main(int argc, char * argv[])
         destination_pub_->publish(destination_msg);
 
         Eigen::Vector3d dist_vec=start_pos-current_pos;
-        double dist=norm(dist_vec);
+        double dist=dist_vec.norm();
         if(dist<0.01){
             execution_=false;
-            execution_pub->publish(execution_);
+            execution_pub_->publish(execution_);
             break;
         }
     }
