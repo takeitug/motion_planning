@@ -126,7 +126,10 @@ public:
             RCLCPP_INFO(this->get_logger(), "Waiting for action server to become available...");
         }
         RCLCPP_INFO(this->get_logger(), "Action server available.");
+
+        check_pub_ = this->create_publisher<std_msgs::msg::Float64>("check", 10);
     }
+    rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr check_pub_;
 
     void process()
     {
@@ -356,6 +359,7 @@ int main(int argc, char * argv[])
     rclcpp::Rate rate(100);  // 100Hz
 
     bool prev_execution = false;
+    int count=0;
 
     RCLCPP_INFO(node->get_logger(), "goes to initial position");
     node->execute({
@@ -378,10 +382,13 @@ int main(int argc, char * argv[])
             break;
         }
         prev_execution = node->execution_;
-        std::cout<<"here ! "<<std::endl;
+        if(count==0) std::cout<<"waiting for pointcloud "<<std::endl;
+        count++;
 
         rate.sleep();
     }
+    count=0;
+
     Eigen::Vector3d dest=node->destination_;
     Eigen::VectorXd joints=node->joints_;
     Eigen::Matrix<double,4,4> FK=node->FK_;
@@ -419,10 +426,13 @@ int main(int argc, char * argv[])
         joints[4]+=q_dt(4,0);
         joints[5]+=q_dt(5,0);
         joints[6]+=q_dt(6,0);
-        std::cout<<"here 2! "<<distance<<std::endl;
+
+        if(count==0) std::cout<<"calculating start position"<<std::endl;
+        count++;
 
         rate.sleep();
     }
+    count=0;
 
     ///位置制御を実行
     RCLCPP_INFO(node->get_logger(), "goes to start position");
@@ -446,15 +456,37 @@ int main(int argc, char * argv[])
             break;
         }
         prev_execution = node->execution_;
-        //std::cout<<"here 3! "<<joints<<std::endl;
+        if(count==0) std::cout<<"waiting for que "<<std::endl;
+        count++;
 
         rate.sleep();
     }
+    count=0;
+
+    while (rclcpp::ok() && node->movement_ == Eigen::VectorXd::Zero(6)) {
+        rclcpp::spin_some(node);
+        node->process();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        if(count==0) std::cout<<"waiting for movement "<<std::endl;
+        count++;
+    }
+    count=0;
     Eigen::VectorXd movement=node->movement_;
-    int count=0;
+
+    // joints=node->joints_;
+    // node->execute({
+    //     joints[0],
+    //     joints[1],
+    //     joints[2],
+    //     joints[3],
+    //     joints[4],
+    //     joints[5],
+    //     joints[6],
+    // });
+    // std::this_thread::sleep_for(std::chrono::seconds(15));
 
     //追従制御開始
-    rclcpp::Rate rate2(1);  // 100Hz
+    rclcpp::Rate rate2(2);  // 100Hz
     while (rclcpp::ok()) {
         node->process();
         rclcpp::spin_some(node);
@@ -464,7 +496,6 @@ int main(int argc, char * argv[])
         std::cout<<"movement "<<movement<<std::endl;
 
         Eigen::Vector3d movement_distance = movement.head<3>();
-        std::cout<<"movement_distance "<<movement_distance.norm()<<std::endl;
         
         q_dt=J_inv*movement;
         joints[0]+=q_dt(0,0);
@@ -474,13 +505,18 @@ int main(int argc, char * argv[])
         joints[4]+=q_dt(4,0);
         joints[5]+=q_dt(5,0);
         joints[6]+=q_dt(6,0);
-        if(count<2) node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},1);
-        std::cout << "count: " << count << std::endl;
+        // if(count<1) node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},1);
+        // if(count>10) node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},1);
+        node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},0.2);
+        std_msgs::msg::Float64 check_msg;
+        check_msg.data=count;
+        node->check_pub_->publish(check_msg);
         count++;
 
-        std::cout << "manip: " << node->manip_ << std::endl;
+        // std::cout << "manip: " << node->manip_ << std::endl;
         // std::cout << "J_inv:\n" << node->J_inv_ << std::endl;
         // std::cout << "trace_vec: " << node->trace_vec_.transpose() << std::endl;
+        if(node->execution_) break;
 
         rate2.sleep();
     }

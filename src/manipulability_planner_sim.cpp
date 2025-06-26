@@ -87,6 +87,12 @@ public:
         destination_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("destination", 10);
         execution_pub_ = this->create_publisher<std_msgs::msg::Bool>("/execution", 1);
         movement_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("movement", 10);
+
+        check_sub_ = this->create_subscription<std_msgs::msg::Float64>(
+            "check", 10,
+            [this](const std_msgs::msg::Float64::SharedPtr msg) {
+                check_ = msg->data;
+            });
     }
 
     rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr destination_pub_;
@@ -130,6 +136,8 @@ public:
     bool got_marker2() const { return got_marker2_; }
     Eigen::Vector3d get_marker1() const { return marker1_pos_; }
     Eigen::Vector3d get_marker2() const { return marker2_pos_; }
+
+    double get_check() const { return check_; }
 
     Eigen::Vector3d potential(const Eigen::Vector3d& current_pos, const Eigen::Vector3d& goal_pos, const double distance) {
         Eigen::Vector3d goal_vec;
@@ -176,37 +184,52 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud_sub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr pointcloud_acquired_pub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr marker1_sub_, marker2_sub_;
+
+    rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr check_sub_;
+    double check_;
 };
 
 int main(int argc, char * argv[])
 {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<ManipulabilityPlanner>();
-    rclcpp::Rate rate(1);
+    rclcpp::Rate rate(2);
     std_msgs::msg::Bool execution_msg;
     execution_msg.data=false;
+    int count=0;
 
     // 点群が来るまで待機
     // while (rclcpp::ok() && (!node->got_pointcloud() || !node->got_marker1() || !node->got_marker2())) {
     //     rclcpp::spin_some(node);
     //     node->execution_pub_->publish(execution_msg);
     //     std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    //     std::cout<<"waiting for pointcloud "<<std::endl;
+    //     if(count==0) std::cout<<"waiting for pointcloud "<<std::endl;
+    //     count++;
     // }
+    while (rclcpp::ok() && (!node->get_manip())) {
+        rclcpp::spin_some(node);
+        node->execution_pub_->publish(execution_msg);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        if(count==0) std::cout<<"waiting for publish "<<std::endl;
+        count++;
+    }
+
+    count=0;
 
     // Eigen::Vector3d start_pos=node->get_marker1();
     // Eigen::Vector3d goal_pos=node->get_marker2();
 
     Eigen::Vector3d start_pos;
-    start_pos<<0.02,0.393,0.9;
+    start_pos<<0.02,0.393,0.8;
     Eigen::Vector3d goal_pos;
-    goal_pos<<0.22,0.393,0.9;
+    goal_pos<<0.42,0.393,0.8;
 
     Eigen::Vector4d fk_col4 = node->get_fk_col4();
     Eigen::Vector3d current_pos = fk_col4.head<3>();
     Eigen::VectorXd manip_trans = node->get_manip_trans();
 
     execution_msg.data=true;
+    
     //開始位置に到達するまで待機
     while(rclcpp::ok()){
         rclcpp::spin_some(node);
@@ -214,7 +237,6 @@ int main(int argc, char * argv[])
 
         fk_col4 = node->get_fk_col4();
         current_pos = fk_col4.head<3>();
-        std::cout<<"here ! "<<current_pos<<std::endl;
         std_msgs::msg::Float64MultiArray destination_msg;
         destination_msg.data.resize(start_pos.size());
         for (int i = 0; i < start_pos.size(); ++i) {
@@ -225,22 +247,29 @@ int main(int argc, char * argv[])
         Eigen::Vector3d dist_vec=start_pos-current_pos;
         double dist=dist_vec.norm();
         if(dist<0.005){
+            std::cout<<"start   x: "<<current_pos(0)<<"  y: "<<current_pos(1)<<"  z: "<<current_pos(2)<<std::endl;
             //開始位置に到達
             execution_msg.data=false;
             node->execution_pub_->publish(execution_msg);
             break;
         }
+        if(count==0) std::cout<<"waiting for reach "<<std::endl;
+        count++;
         rate.sleep();
     }
-
-    while (rclcpp::ok() && node->get_fk_col4() == Eigen::Vector4d::Zero()) {
-        rclcpp::spin_some(node);
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        std::cout << "waiting for fk_matrix..." << std::endl;
-    }
+    count=0;
 
     double coef_manip=0.5;
     double coef_pos=1.0;
+    
+    while (rclcpp::ok()) {
+        rclcpp::spin_some(node);
+        node->execution_pub_->publish(execution_msg);
+        if(count>100) break;
+        count++;
+    }
+    count=0;
+
     //追従制御開始
     while (rclcpp::ok()) {
         rclcpp::spin_some(node);
@@ -251,13 +280,11 @@ int main(int argc, char * argv[])
 
         Eigen::Vector3d manip_direc = manip_trans.head<3>();
         current_pos = fk_col4.head<3>();
-        std::cout<<"here 2! "<<current_pos<<std::endl;
         Eigen::Vector3d goal_vec=goal_pos-current_pos;
         double distance=goal_vec.norm();
-        std::cout<<"distance "<<distance<<std::endl;
-        if (distance<0.1){
-            break;
-        }
+        // std::cout<<"x pos "<<current_pos(0)<<std::endl;
+        // std::cout<<"distance "<<distance<<std::endl;
+        std::cout<<"current x: "<<current_pos(0)<<"  y: "<<current_pos(1)<<"  z: "<<current_pos(2)<<std::endl;
 
         Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
         Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
@@ -269,14 +296,27 @@ int main(int argc, char * argv[])
 
         Eigen::Matrix<double, 6,1> movement;
         //movement<<nearest_point-current_pos,0,0,0;
-        movement<<direction,0,0,0;
+        movement<<0.01*direction/direction.norm(),0,0,0;
 
         std_msgs::msg::Float64MultiArray movement_msg;
         movement_msg.data.resize(6);
         for (int i = 0; i < 6; ++i) {
             movement_msg.data[i] = movement[i];
         }
+        if (distance<0.01){
+            for (int i = 0; i < 6; ++i) {
+                movement_msg.data[i] = 0;
+            }
+            node->movement_pub_->publish(movement_msg);
+            execution_msg.data=true;
+            node->execution_pub_->publish(execution_msg);
+            std::cout<<"end     x: "<<current_pos(0)<<"  y: "<<current_pos(1)<<"  z: "<<current_pos(2)<<std::endl;
+            break;
+        }
         node->movement_pub_->publish(movement_msg);
+        // std::cout << "count: " << count << std::endl;
+        // std::cout << "check: " << node->get_check() << std::endl;
+        count++;
         //std::cout<<"movement "<<movement<<std::endl;
 
         rate.sleep();
