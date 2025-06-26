@@ -233,6 +233,12 @@ int main(int argc, char * argv[])
         rate.sleep();
     }
 
+    while (rclcpp::ok() && node->get_fk_col4() == Eigen::Vector4d::Zero()) {
+        rclcpp::spin_some(node);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::cout << "waiting for fk_matrix..." << std::endl;
+    }
+
     double coef_manip=0.5;
     double coef_pos=1.0;
     //追従制御開始
