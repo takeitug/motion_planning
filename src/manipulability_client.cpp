@@ -451,16 +451,22 @@ int main(int argc, char * argv[])
         rate.sleep();
     }
     Eigen::VectorXd movement=node->movement_;
+    int count=0;
 
     //追従制御開始
+    rclcpp::Rate rate2(1);  // 100Hz
     while (rclcpp::ok()) {
-        rclcpp::spin_some(node);
         node->process();
+        rclcpp::spin_some(node);
         joints=node->joints_;
         J_inv=node->J_inv_;
         movement=node->movement_;
+        std::cout<<"movement "<<movement<<std::endl;
+
+        Eigen::Vector3d movement_distance = movement.head<3>();
+        std::cout<<"movement_distance "<<movement_distance.norm()<<std::endl;
         
-        q_dt=J_inv*move;
+        q_dt=J_inv*movement;
         joints[0]+=q_dt(0,0);
         joints[1]+=q_dt(1,0);
         joints[2]+=q_dt(2,0);
@@ -468,13 +474,15 @@ int main(int argc, char * argv[])
         joints[4]+=q_dt(4,0);
         joints[5]+=q_dt(5,0);
         joints[6]+=q_dt(6,0);
-        node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},1);
+        if(count<2) node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},1);
+        std::cout << "count: " << count << std::endl;
+        count++;
 
-        // std::cout << "manip: " << node->manip_ << std::endl;
+        std::cout << "manip: " << node->manip_ << std::endl;
         // std::cout << "J_inv:\n" << node->J_inv_ << std::endl;
         // std::cout << "trace_vec: " << node->trace_vec_.transpose() << std::endl;
 
-        //rate.sleep();
+        rate2.sleep();
     }
 
     rclcpp::shutdown();
