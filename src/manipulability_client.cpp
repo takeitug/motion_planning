@@ -49,6 +49,7 @@ public:
     Eigen::VectorXd manipulability_trans_;
     bool execution_;
     Eigen::Vector3d destination_;
+    Eigen::VectorXd movement_;
 
     // --- JointTrajectoryClient関連 ---
     rclcpp_action::Client<control_msgs::action::FollowJointTrajectory>::SharedPtr joint_trajectory_action_client_;
@@ -73,11 +74,13 @@ public:
 
         execution_ = false;
         destination_ = Eigen::Vector3d::Zero();
+        movement_ = Eigen::VectorXd::Zero(6);
         execution_sub_ = this->create_subscription<std_msgs::msg::Bool>(
             "/execution", 10,
             [this](const std_msgs::msg::Bool::SharedPtr msg) {
                 execution_ = msg->data;
-            });
+            }
+        );
         destination_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
             "/destination", 10,
             [this](const std_msgs::msg::Float64MultiArray::SharedPtr msg) {
@@ -85,7 +88,17 @@ public:
                     for (int i = 0; i < 3; ++i)
                         destination_(i) = msg->data[i];
                 }
-            });
+            }
+        );
+        movement_sub_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
+            "/movement", 10,
+            [this](const std_msgs::msg::Float64MultiArray::SharedPtr msg) {
+                if (msg->data.size() >= 6) {
+                    for (int i = 0; i < 6; ++i)
+                        movement_(i) = msg->data[i];
+                }
+            }
+        );
 
         // --- JointTrajectoryClient 初期化 ---
         joint_trajectory_action_client_ =
@@ -333,6 +346,7 @@ public:
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr subscription_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr execution_sub_;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr destination_sub_;
+    rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr movement_sub_;
 };
 
 int main(int argc, char * argv[])
@@ -376,6 +390,8 @@ int main(int argc, char * argv[])
     Eigen::Matrix<double, 6, 7> J=node->J_;
     Eigen::Matrix<double, 7, 6> J_inv=node->J_inv_;
 
+    Eigen::Matrix<double, 7, 1> q_dt;
+
     //開始位置に到達する角度を計算
     while (rclcpp::ok()) {
         rclcpp::spin_some(node);
@@ -395,7 +411,7 @@ int main(int argc, char * argv[])
         Eigen::Matrix<double, 6, 1> move;
         move<<direction,0,0,0;
 
-        Eigen::Matrix<double, 7, 1> q_dt=J_inv*move;
+        q_dt=J_inv*move;
         joints[0]+=q_dt(0,0);
         joints[1]+=q_dt(1,0);
         joints[2]+=q_dt(2,0);
@@ -434,11 +450,25 @@ int main(int argc, char * argv[])
 
         rate.sleep();
     }
+    Eigen::VectorXd movement=node->movement_;
 
     //追従制御開始
     while (rclcpp::ok()) {
         rclcpp::spin_some(node);
         node->process();
+        joints=node->joints_;
+        J_inv=node->J_inv_;
+        movement=node->movement_;
+        
+        q_dt=J_inv*move;
+        joints[0]+=q_dt(0,0);
+        joints[1]+=q_dt(1,0);
+        joints[2]+=q_dt(2,0);
+        joints[3]+=q_dt(3,0);
+        joints[4]+=q_dt(4,0);
+        joints[5]+=q_dt(5,0);
+        joints[6]+=q_dt(6,0);
+        node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},1);
 
         // std::cout << "manip: " << node->manip_ << std::endl;
         // std::cout << "J_inv:\n" << node->J_inv_ << std::endl;

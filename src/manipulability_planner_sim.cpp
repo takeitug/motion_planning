@@ -86,10 +86,12 @@ public:
         pointcloud_acquired_pub_ = this->create_publisher<std_msgs::msg::Bool>("/pointcloud_acquired", 1);
         destination_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("destination", 10);
         execution_pub_ = this->create_publisher<std_msgs::msg::Bool>("/execution", 1);
+        movemet_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("movement", 10);
     }
 
     rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr destination_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr execution_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr movement_pub_;
 
     // PointCloud2→Eigen行列（Nx3）
     void parse_pointcloud(const sensor_msgs::msg::PointCloud2 & msg) {
@@ -256,6 +258,13 @@ int main(int argc, char * argv[])
         Eigen::Matrix<double, 6,1> movement;
         //movement<<nearest_point-current_pos,0,0,0;
         movement<<next_pos-current_pos,0,0,0;
+
+        std_msgs::msg::Float64MultiArray movement_msg;
+        destination_msg.data.resize(movement.size());
+        for (int i = 0; i < start_pos.size(); ++i) {
+            movement_msg.data[i] = movement[i];
+        }
+        node->movement_pub_->publish(movement_msg);
 
         rate.sleep();
     }
