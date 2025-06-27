@@ -125,6 +125,39 @@ public:
         return saved_cloud_mat_.row(minIndex).cast<double>();
     }
 
+    Eigen::Vector3d get_nearest_point2(const Eigen::Vector3d& next_pos, double roi = 0.05) const {
+        if (!got_pointcloud_) return Eigen::Vector3d::Zero();
+
+        std::vector<int> candidates;
+        for (int i = 0; i < saved_cloud_mat_.rows(); ++i) {
+            if ( (saved_cloud_mat_(i,0) > next_pos.x() - roi) && (saved_cloud_mat_(i,0) < next_pos.x() + roi) &&
+                (saved_cloud_mat_(i,1) > next_pos.y() - roi) && (saved_cloud_mat_(i,1) < next_pos.y() + roi) &&
+                (saved_cloud_mat_(i,2) > next_pos.z() - roi) && (saved_cloud_mat_(i,2) < next_pos.z() + roi) )
+            {
+                candidates.push_back(i);
+            }
+        }
+        // ROI内に点がなければ従来通り全点探索
+        if (candidates.empty()) {
+            return get_nearest_point(next_pos); // 既存の全点探索メソッド
+        }
+
+        int min_idx = -1;
+        double min_dist = std::numeric_limits<double>::max();
+        for (int idx : candidates) {
+            double dist = (saved_cloud_mat_.row(idx).cast<double>() - next_pos.transpose()).norm();
+            if (dist < min_dist) {
+                min_dist = dist;
+                min_idx = idx;
+            }
+        }
+        if (min_idx >= 0) {
+            return saved_cloud_mat_.row(min_idx).cast<double>();
+        }
+        return Eigen::Vector3d::Zero();
+    }
+
+
     double get_manip() const { return manip_; }
     Eigen::VectorXd get_manip_trans() const { return manip_trans_; }
     Eigen::Vector4d get_fk_col4() const { return fk_col4_; }
@@ -292,27 +325,29 @@ int main(int argc, char * argv[])
         // Eigen::Vector3d next_pos=current_pos+direction;
         double stepsize=0.005;
         Eigen::Vector3d move_trans=stepsize*direction/direction.norm();
-        std::cout<<"move_trans: "<<move_trans.transpose()<<std::endl;
+        // std::cout<<"move_trans: "<<move_trans.transpose()<<std::endl;
         Eigen::Vector3d next_pos=current_pos+move_trans;
-        std::cout<<"next:      "<<next_pos.transpose()<<std::endl;
+        // std::cout<<"next:      "<<next_pos.transpose()<<std::endl;
 
-        // std::chrono::system_clock::time_point start, end;
+        std::chrono::system_clock::time_point start, end;
 
-        // start = std::chrono::system_clock::now();
+        start = std::chrono::system_clock::now();
 
-        // Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
+        //Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
+        Eigen::Vector3d nearest_point = node->get_nearest_point2(next_pos,0.05);
         // std::cout << "nearest:    " << nearest_point.transpose() << std::endl;
 
-        // end = std::chrono::system_clock::now();
+        end = std::chrono::system_clock::now();
 
-        // double time = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000.0);
-        // printf("time %lf[ms]\n", time);
+        double time = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000.0);
+        printf("time %lf[ms]\n", time);
 
-        Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
-        std::cout << "nearest:    " << nearest_point.transpose() << std::endl;
+        // Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
+        // Eigen::Vector3d nearest_point = node->get_nearest_point2(next_pos,0.05);
+        // std::cout << "nearest:    " << nearest_point.transpose() << std::endl;
 
         Eigen::Vector3d nearest_move=nearest_point-current_pos;
-        std::cout<<"near_move:  "<<nearest_move.transpose()<<std::endl;
+        // std::cout<<"near_move:  "<<nearest_move.transpose()<<std::endl;
 
         Eigen::Matrix<double, 6,1> movement;
         movement<<nearest_move,0,0,0;
