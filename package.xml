@@ -4,7 +4,7 @@
   <name>motion_planning</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="nr.ise1999@gmail.com">isrlab</maintainer>
+  <maintainer email="isrlab@todo.todo">isrlab</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

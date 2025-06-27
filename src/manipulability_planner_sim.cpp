@@ -197,6 +197,10 @@ int main(int argc, char * argv[])
     std_msgs::msg::Bool execution_msg;
     execution_msg.data=false;
     int count=0;
+    Eigen::Vector3d start_pos;
+    start_pos<<0.02,0.393,0.8;
+    Eigen::Vector3d goal_pos;
+    goal_pos<<0.42,0.393,0.8;
 
     // 点群が来るまで待機
     // while (rclcpp::ok() && (!node->got_pointcloud() || !node->got_marker1() || !node->got_marker2())) {
@@ -206,6 +210,10 @@ int main(int argc, char * argv[])
     //     if(count==0) std::cout<<"waiting for pointcloud "<<std::endl;
     //     count++;
     // }
+    // start_pos=node->get_marker1();
+    // goal_pos=node->get_marker2();
+
+    //点群なしシミュレーション
     while (rclcpp::ok() && (!node->get_manip())) {
         rclcpp::spin_some(node);
         node->execution_pub_->publish(execution_msg);
@@ -215,14 +223,6 @@ int main(int argc, char * argv[])
     }
 
     count=0;
-
-    // Eigen::Vector3d start_pos=node->get_marker1();
-    // Eigen::Vector3d goal_pos=node->get_marker2();
-
-    Eigen::Vector3d start_pos;
-    start_pos<<0.02,0.393,0.8;
-    Eigen::Vector3d goal_pos;
-    goal_pos<<0.42,0.393,0.8;
 
     Eigen::Vector4d fk_col4 = node->get_fk_col4();
     Eigen::Vector3d current_pos = fk_col4.head<3>();
