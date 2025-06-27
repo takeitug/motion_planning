@@ -305,6 +305,9 @@ int main(int argc, char * argv[])
 
     //追従制御開始
     while (rclcpp::ok()) {
+        std::chrono::system_clock::time_point start, end;
+        start = std::chrono::system_clock::now();
+
         rclcpp::spin_some(node);
 
         double manip = node->get_manip();
@@ -323,24 +326,15 @@ int main(int argc, char * argv[])
         Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
 
         // Eigen::Vector3d next_pos=current_pos+direction;
-        double stepsize=0.005;
+        double stepsize=0.003;
         Eigen::Vector3d move_trans=stepsize*direction/direction.norm();
         // std::cout<<"move_trans: "<<move_trans.transpose()<<std::endl;
         Eigen::Vector3d next_pos=current_pos+move_trans;
         // std::cout<<"next:      "<<next_pos.transpose()<<std::endl;
 
-        std::chrono::system_clock::time_point start, end;
-
-        start = std::chrono::system_clock::now();
-
-        //Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
-        Eigen::Vector3d nearest_point = node->get_nearest_point2(next_pos,0.05);
+        Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
+        // Eigen::Vector3d nearest_point = node->get_nearest_point2(next_pos,0.05);
         // std::cout << "nearest:    " << nearest_point.transpose() << std::endl;
-
-        end = std::chrono::system_clock::now();
-
-        double time = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000.0);
-        printf("time %lf[ms]\n", time);
 
         // Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
         // Eigen::Vector3d nearest_point = node->get_nearest_point2(next_pos,0.05);
@@ -374,6 +368,10 @@ int main(int argc, char * argv[])
         // std::cout << "check: " << node->get_check() << std::endl;
         count++;
         //std::cout<<"movement "<<movement<<std::endl;
+
+        end = std::chrono::system_clock::now();
+        double time = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000.0);
+        printf("time %lf[ms]\n", time);
 
         rate.sleep();
     }
