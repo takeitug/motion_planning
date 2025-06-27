@@ -128,8 +128,10 @@ public:
         RCLCPP_INFO(this->get_logger(), "Action server available.");
 
         check_pub_ = this->create_publisher<std_msgs::msg::Float64>("check", 10);
+        setinitialposition_pub_ = this->create_publisher<std_msgs::msg::Bool>("/setinitialposition", 1);
     }
     rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr check_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr setinitialposition_pub_;
 
     void process()
     {
@@ -362,19 +364,16 @@ int main(int argc, char * argv[])
     int count=0;
 
     RCLCPP_INFO(node->get_logger(), "goes to initial position");
-    node->execute({
-        deg2rad(-20.0),
-        deg2rad(80.0),
-        deg2rad(100.0),
-        deg2rad(-80.0),
-        deg2rad(-80.0),
-        deg2rad(-80.0),
-        deg2rad(20.0),
-    });
+    // node->execute({deg2rad(-20.0),deg2rad(80.0),deg2rad(100.0),deg2rad(-80.0),deg2rad(-80.0),deg2rad(-80.0),deg2rad(20.0),});
+    node->execute({deg2rad(18.62),deg2rad(93.26),deg2rad(110.67),deg2rad(-75.41),deg2rad(-117.52),deg2rad(-91.32),deg2rad(-3.29),});
+    std_msgs::msg::Bool setinitialposition_msg;
+    setinitialposition_msg.data=true;
+    node->setinitialposition_pub_->publish(setinitialposition_msg);
 
     while (rclcpp::ok()) {
         rclcpp::spin_some(node);
         node->process();
+        node->setinitialposition_pub_->publish(setinitialposition_msg);
 
         if (node->execution_ && !prev_execution) {
             //マーカーと点群が取得できたか判別
@@ -399,10 +398,22 @@ int main(int argc, char * argv[])
 
     Eigen::Matrix<double, 7, 1> q_dt;
 
+    Eigen::Vector3d z_angle;
+    z_angle<<FK(0,2),FK(1,2),FK(2,2);
+    Eigen::Vector3d z_refer;
+    z_refer<<0,0,1;
+    Eigen::Vector3d rotation;
+    rotation<<0,0,0;
+    double stepsize=0.001;
+    double rotang=0.0;
+    Eigen::Vector3d rotax;
+    rotax<<0,0,0;
+
     //開始位置に到達する角度を計算
     while (rclcpp::ok()) {
         rclcpp::spin_some(node);
         node->process();
+        dest=node->destination_;
 
         FK = forwardkinematics::calcfk(joints);
         J = inversekinematics::calcJacobian(joints);
@@ -414,9 +425,17 @@ int main(int argc, char * argv[])
         if(distance<0.005){
             break;
         }
-        direction=0.001*direction/distance;
+        direction=stepsize*direction/distance;
+        if(count==0) {
+            std::cout<<"calculating start position ("<<dest(0)<<"  "<<dest(1)<<"  "<<dest(2)<<")"<<std::endl;
+            rotax = z_angle.cross(z_refer);
+            rotax = rotax / rotax.norm();
+            rotang = acos(z_refer.dot(z_angle));
+            rotang=rotang/(distance/stepsize);
+        }
+        rotation = rotax * rotang;
         Eigen::Matrix<double, 6, 1> move;
-        move<<direction,0,0,0;
+        move<<direction,rotation;
 
         q_dt=J_inv*move;
         joints[0]+=q_dt(0,0);
@@ -427,7 +446,6 @@ int main(int argc, char * argv[])
         joints[5]+=q_dt(5,0);
         joints[6]+=q_dt(6,0);
 
-        if(count==0) std::cout<<"calculating start position"<<std::endl;
         count++;
 
         rate.sleep();
@@ -472,6 +490,7 @@ int main(int argc, char * argv[])
     }
     count=0;
     Eigen::VectorXd movement=node->movement_;
+    Eigen::VectorXd movement_save=node->movement_;
 
     // joints=node->joints_;
     // node->execute({
@@ -494,6 +513,9 @@ int main(int argc, char * argv[])
         J_inv=node->J_inv_;
         movement=node->movement_;
         std::cout<<"movement "<<movement<<std::endl;
+        // if(movement==movement_save){
+        //     continue;
+        // }
 
         Eigen::Vector3d movement_distance = movement.head<3>();
         
@@ -506,7 +528,7 @@ int main(int argc, char * argv[])
         joints[5]+=q_dt(5,0);
         joints[6]+=q_dt(6,0);
         // if(count<1) node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},1);
-        // if(count>10) node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},1);
+        // if(count>10) node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},0.2);
         node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},0.2);
         std_msgs::msg::Float64 check_msg;
         check_msg.data=count;

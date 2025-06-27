@@ -63,7 +63,7 @@ public:
             });
 
         marker1_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-            "/marker1_pose", 10,
+            "/marker1_transformed", 10,
             [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
                 if (!got_marker1_) {
                     marker1_pos_ << msg->pose.position.x, msg->pose.position.y, msg->pose.position.z;
@@ -73,7 +73,7 @@ public:
             });
 
         marker2_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-            "/marker2_pose", 10,
+            "/marker2_transformed", 10,
             [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
                 if (!got_marker2_) {
                     marker2_pos_ << msg->pose.position.x, msg->pose.position.y, msg->pose.position.z;
@@ -193,7 +193,7 @@ int main(int argc, char * argv[])
 {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<ManipulabilityPlanner>();
-    rclcpp::Rate rate(2);
+    rclcpp::Rate rate(10);
     std_msgs::msg::Bool execution_msg;
     execution_msg.data=false;
     int count=0;
@@ -203,24 +203,24 @@ int main(int argc, char * argv[])
     goal_pos<<0.42,0.393,0.8;
 
     // 点群が来るまで待機
-    // while (rclcpp::ok() && (!node->got_pointcloud() || !node->got_marker1() || !node->got_marker2())) {
-    //     rclcpp::spin_some(node);
-    //     node->execution_pub_->publish(execution_msg);
-    //     std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    //     if(count==0) std::cout<<"waiting for pointcloud "<<std::endl;
-    //     count++;
-    // }
-    // start_pos=node->get_marker1();
-    // goal_pos=node->get_marker2();
-
-    //点群なしシミュレーション
-    while (rclcpp::ok() && (!node->get_manip())) {
+    while (rclcpp::ok() && (!node->got_pointcloud() || !node->got_marker1() || !node->got_marker2())) {
         rclcpp::spin_some(node);
         node->execution_pub_->publish(execution_msg);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        if(count==0) std::cout<<"waiting for publish "<<std::endl;
+        if(count==0) std::cout<<"waiting for pointcloud "<<std::endl;
         count++;
     }
+    start_pos=node->get_marker1();
+    goal_pos=node->get_marker2();
+
+    //点群なしシミュレーション
+    // while (rclcpp::ok() && (!node->get_manip())) {
+    //     rclcpp::spin_some(node);
+    //     node->execution_pub_->publish(execution_msg);
+    //     std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    //     if(count==0) std::cout<<"waiting for publish "<<std::endl;
+    //     count++;
+    // }
 
     count=0;
 
@@ -233,7 +233,6 @@ int main(int argc, char * argv[])
     //開始位置に到達するまで待機
     while(rclcpp::ok()){
         rclcpp::spin_some(node);
-        node->execution_pub_->publish(execution_msg);
 
         fk_col4 = node->get_fk_col4();
         current_pos = fk_col4.head<3>();
@@ -254,6 +253,7 @@ int main(int argc, char * argv[])
             break;
         }
         if(count==0) std::cout<<"waiting for reach "<<std::endl;
+        node->execution_pub_->publish(execution_msg);
         count++;
         rate.sleep();
     }
@@ -284,19 +284,39 @@ int main(int argc, char * argv[])
         double distance=goal_vec.norm();
         // std::cout<<"x pos "<<current_pos(0)<<std::endl;
         // std::cout<<"distance "<<distance<<std::endl;
-        std::cout<<"current x: "<<current_pos(0)<<"  y: "<<current_pos(1)<<"  z: "<<current_pos(2)<<std::endl;
+        std::cout<<"current:    "<<current_pos.transpose()<<std::endl;
 
         Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
         Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
 
-        Eigen::Vector3d next_pos=current_pos+direction;
+        // Eigen::Vector3d next_pos=current_pos+direction;
+        double stepsize=0.005;
+        Eigen::Vector3d move_trans=stepsize*direction/direction.norm();
+        std::cout<<"move_trans: "<<move_trans.transpose()<<std::endl;
+        Eigen::Vector3d next_pos=current_pos+move_trans;
+        std::cout<<"next:      "<<next_pos.transpose()<<std::endl;
+
+        // std::chrono::system_clock::time_point start, end;
+
+        // start = std::chrono::system_clock::now();
 
         // Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
-        // std::cout << "[nearest point to next_pos] " << nearest_point.transpose() << std::endl;
+        // std::cout << "nearest:    " << nearest_point.transpose() << std::endl;
+
+        // end = std::chrono::system_clock::now();
+
+        // double time = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000.0);
+        // printf("time %lf[ms]\n", time);
+
+        Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
+        std::cout << "nearest:    " << nearest_point.transpose() << std::endl;
+
+        Eigen::Vector3d nearest_move=nearest_point-current_pos;
+        std::cout<<"near_move:  "<<nearest_move.transpose()<<std::endl;
 
         Eigen::Matrix<double, 6,1> movement;
-        //movement<<nearest_point-current_pos,0,0,0;
-        movement<<0.01*direction/direction.norm(),0,0,0;
+        movement<<nearest_move,0,0,0;
+        // movement<<0.01*direction/direction.norm(),0,0,0;
 
         std_msgs::msg::Float64MultiArray movement_msg;
         movement_msg.data.resize(6);
@@ -311,6 +331,7 @@ int main(int argc, char * argv[])
             execution_msg.data=true;
             node->execution_pub_->publish(execution_msg);
             std::cout<<"end     x: "<<current_pos(0)<<"  y: "<<current_pos(1)<<"  z: "<<current_pos(2)<<std::endl;
+            std::cout<<"goal: "<<goal_pos.transpose()<<std::endl;
             break;
         }
         node->movement_pub_->publish(movement_msg);
