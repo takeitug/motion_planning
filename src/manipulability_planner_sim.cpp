@@ -11,6 +11,7 @@
 #include <limits>
 #include <thread>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/wrench_stamped.hpp>
 
 class ManipulabilityPlanner : public rclcpp::Node
 {
@@ -93,6 +94,19 @@ public:
             [this](const std_msgs::msg::Float64::SharedPtr msg) {
                 check_ = msg->data;
             });
+        
+        leptrino_sub_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
+            "/leptrino", 10,
+            [this](const geometry_msgs::msg::WrenchStamped::SharedPtr msg) {
+                leptrino_force_torque.header.stamp=msg->header.stamp;
+                leptrino_force_torque.header.frame_id = "leptrino_sensor";
+                leptrino_force_torque.wrench.force.x = msg->wrench.force.x;
+                leptrino_force_torque.wrench.force.y = msg->wrench.force.y;
+                leptrino_force_torque.wrench.force.z = msg->wrench.force.z;
+                leptrino_force_torque.wrench.torque.x = msg->wrench.torque.x;
+                leptrino_force_torque.wrench.torque.y = msg->wrench.torque.y;
+                leptrino_force_torque.wrench.torque.z = msg->wrench.torque.z;
+            });
     }
 
     rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr destination_pub_;
@@ -171,6 +185,7 @@ public:
     Eigen::Vector3d get_marker2() const { return marker2_pos_; }
 
     double get_check() const { return check_; }
+    geometry_msgs::msg::WrenchStamped get_force_torque() const {return leptrino_force_torque;}
 
     Eigen::Vector3d potential(const Eigen::Vector3d& current_pos, const Eigen::Vector3d& goal_pos, const double distance) {
         Eigen::Vector3d goal_vec;
@@ -220,6 +235,8 @@ private:
 
     rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr check_sub_;
     double check_;
+    rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr leptrino_sub_;
+    geometry_msgs::msg::WrenchStamped leptrino_force_torque;
 };
 
 int main(int argc, char * argv[])
@@ -235,12 +252,16 @@ int main(int argc, char * argv[])
     Eigen::Vector3d goal_pos;
     goal_pos<<0.42,0.393,0.8;
 
+    geometry_msgs::msg::WrenchStamped force_torque;
+
     // 点群が来るまで待機
     while (rclcpp::ok() && (!node->got_pointcloud() || !node->got_marker1() || !node->got_marker2())) {
         rclcpp::spin_some(node);
         node->execution_pub_->publish(execution_msg);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         if(count==0) std::cout<<"waiting for pointcloud "<<std::endl;
+        force_torque=node->get_force_torque();
+        std::cout<<force_torque.wrench.force.x<<std::endl;
         count++;
     }
     start_pos=node->get_marker1();
