@@ -254,8 +254,9 @@ public:
     if (!got_pointcloud_ || !kd_tree_built_) return Eigen::Vector3d::Zero();
     float query_pt[3] = {static_cast<float>(next_pos.x()), static_cast<float>(next_pos.y()), static_cast<float>(next_pos.z())};
     const float search_radius = roi * roi; // nanoflannは距離の2乗
-    std::vector<std::pair<size_t, float>> ret_matches;
-    nanoflann::SearchParams params;
+    // std::vector<std::pair<size_t, float>> ret_matches;
+    std::vector<nanoflann::ResultItem<unsigned int, float>> ret_matches;
+    nanoflann::SearchParameters params;
     kd_tree_->radiusSearch(query_pt, search_radius, ret_matches, params);
 
     if (ret_matches.empty()) {
@@ -264,7 +265,7 @@ public:
         float out_dist_sqr;
         nanoflann::KNNResultSet<float> resultSet(1);
         resultSet.init(&ret_index, &out_dist_sqr);
-        kd_tree_->findNeighbors(resultSet, query_pt, nanoflann::SearchParams(10));
+        kd_tree_->findNeighbors(resultSet, query_pt, nanoflann::SearchParameters(10));
         return saved_cloud_mat_.row(ret_index).cast<double>();
     }
 
@@ -290,7 +291,7 @@ private:
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr manip_trans_sub_;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr fk_sub_;
 
-    Eigen::MatrixXf saved_cloud_mat_; // Nx3
+    // Eigen::MatrixXf saved_cloud_mat_; // Nx3
     Eigen::Vector3d marker1_pos_;
     Eigen::Vector3d marker2_pos_;
     bool got_pointcloud_;

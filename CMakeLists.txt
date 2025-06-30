@@ -57,11 +57,26 @@ ament_target_dependencies(manipulability_client
   lbr_fri_ros2
 )
 
+add_executable(manipulability_client_twist src/manipulability_client_twist.cpp)
+target_link_libraries(manipulability_client_twist manipulability_lib FRIClient::FRIClient)
+ament_target_dependencies(manipulability_client_twist 
+  rclcpp sensor_msgs Eigen3 std_msgs
+  control_msgs
+  rclcpp_action
+  trajectory_msgs
+  controller_manager_msgs
+  lbr_fri_idl
+  lbr_fri_ros2
+)
+
 add_executable(manipulability_planner src/manipulability_planner.cpp)
 ament_target_dependencies(manipulability_planner rclcpp sensor_msgs Eigen3 std_msgs geometry_msgs)
+target_include_directories(manipulability_planner PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
 add_executable(manipulability_planner_sim src/manipulability_planner_sim.cpp)
-ament_target_dependencies(manipulability_planner_sim rclcpp sensor_msgs Eigen3 std_msgs geometry_msgs moveit_ros_planning_interface)
+ament_target_dependencies(manipulability_planner_sim rclcpp sensor_msgs Eigen3 std_msgs geometry_msgs)
 target_include_directories(manipulability_planner_sim PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
@@ -79,6 +94,7 @@ install(DIRECTORY launch
 install(TARGETS
   joint_state_listener
   manipulability_client
+  manipulability_client_twist
   manipulability_lib
   manipulability_planner
   manipulability_planner_sim

@@ -6,7 +6,7 @@
 namespace forwardkinematics {
 
 //jacobian calculation
-Eigen::Matrix<double, 4, 4> calcfk(const Eigen::VectorXd &joint_position);
+Eigen::Matrix<double, 4, 4> calcfk(const Eigen::VectorXd &joint_position, double dwf);
 
 }  // namespace forwardkinematics
 

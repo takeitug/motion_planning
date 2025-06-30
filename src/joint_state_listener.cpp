@@ -21,6 +21,7 @@ class JointStateListener : public rclcpp::Node
 public:
     // 主要な中間値や計算結果を全てpublicメンバ変数として宣言
     std::vector<double> last_position_;
+    double dwf=0.126;
     Eigen::VectorXd joints_;
     Eigen::Matrix<double,4,4> FK_;
     Eigen::Matrix<double, 6, 7> J_;
@@ -53,19 +54,19 @@ public:
         if (last_position_.empty()) return;
 
         joints_ = Eigen::VectorXd::Map(last_position_.data(), last_position_.size());
-        FK_ = forwardkinematics::calcfk(joints_);
-        J_ = inversekinematics::calcJacobian(joints_);
+        FK_ = forwardkinematics::calcfk(joints_,dwf);
+        J_ = inversekinematics::calcJacobian(joints_,dwf);
         J_inv_ = inversekinematics::calcJacobianInverse(J_);
 
         manip_ = manipulability::calcmanipulability(J_);
 
-        Jq1_ = manipulability::Jq1(joints_);
-        Jq2_ = manipulability::Jq2(joints_);
-        Jq3_ = manipulability::Jq3(joints_);
-        Jq4_ = manipulability::Jq4(joints_);
-        Jq5_ = manipulability::Jq5(joints_);
-        Jq6_ = manipulability::Jq6(joints_);
-        Jq7_ = manipulability::Jq7(joints_);
+        Jq1_ = manipulability::Jq1(joints_,dwf);
+        Jq2_ = manipulability::Jq2(joints_,dwf);
+        Jq3_ = manipulability::Jq3(joints_,dwf);
+        Jq4_ = manipulability::Jq4(joints_,dwf);
+        Jq5_ = manipulability::Jq5(joints_,dwf);
+        Jq6_ = manipulability::Jq6(joints_,dwf);
+        Jq7_ = manipulability::Jq7(joints_,dwf);
 
         trace_vec_ = manipulability::calctrace(Jq1_, Jq2_, Jq3_, Jq4_, Jq5_, Jq6_, Jq7_, J_inv_);
         manipulability_gradient_ = manipulability::gradient(manip_, trace_vec_);
