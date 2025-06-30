@@ -316,7 +316,7 @@ int main(int argc, char * argv[])
 {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<ManipulabilityPlanner>();
-    rclcpp::Rate rate(10);
+    rclcpp::Rate rate(100);
     std_msgs::msg::Bool execution_msg;
     execution_msg.data=false;
     int count=0;

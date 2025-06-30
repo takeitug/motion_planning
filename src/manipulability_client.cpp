@@ -369,7 +369,7 @@ int main(int argc, char * argv[])
 
     RCLCPP_INFO(node->get_logger(), "goes to initial position");
     // node->execute({deg2rad(-20.0),deg2rad(80.0),deg2rad(100.0),deg2rad(-80.0),deg2rad(-80.0),deg2rad(-80.0),deg2rad(20.0),});
-    node->execute({deg2rad(18.62),deg2rad(93.26),deg2rad(110.67),deg2rad(-75.41),deg2rad(-117.52),deg2rad(-91.32),deg2rad(-3.29),});
+    node->execute({deg2rad(18.62),deg2rad(93.26),deg2rad(110.67),deg2rad(-75.41),deg2rad(-117.52),deg2rad(-91.32),deg2rad(-3.29),},4);
     std_msgs::msg::Bool setinitialposition_msg;
     setinitialposition_msg.data=true;
     node->setinitialposition_pub_->publish(setinitialposition_msg);
@@ -468,7 +468,7 @@ int main(int argc, char * argv[])
         joints[4],
         joints[5],
         joints[6],
-    });
+    },4);
 
     //追従制御の開始合図を待つ
     while (rclcpp::ok()) {
@@ -511,7 +511,7 @@ int main(int argc, char * argv[])
     // std::this_thread::sleep_for(std::chrono::seconds(15));
 
     //追従制御開始
-    rclcpp::Rate rate2(2);  // 100Hz
+    rclcpp::Rate rate2(20);  // 100Hz
     node->process();
     while (rclcpp::ok()) {
         rclcpp::spin_some(node);
@@ -535,7 +535,7 @@ int main(int argc, char * argv[])
         joints[6]+=q_dt(6,0);
         // if(count<1) node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},1);
         // if(count>10) node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},0.2);
-        node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},0.2);
+        node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},0.01);
         node->process();
         std_msgs::msg::Float64 check_msg;
         check_msg.data=count;

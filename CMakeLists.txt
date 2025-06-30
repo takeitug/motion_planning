@@ -61,12 +61,16 @@ add_executable(manipulability_client_twist src/manipulability_client_twist.cpp)
 target_link_libraries(manipulability_client_twist manipulability_lib FRIClient::FRIClient)
 ament_target_dependencies(manipulability_client_twist 
   rclcpp sensor_msgs Eigen3 std_msgs
+  geometry_msgs
   control_msgs
   rclcpp_action
   trajectory_msgs
   controller_manager_msgs
   lbr_fri_idl
   lbr_fri_ros2
+)
+target_include_directories(manipulability_client_twist PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 add_executable(manipulability_planner src/manipulability_planner.cpp)

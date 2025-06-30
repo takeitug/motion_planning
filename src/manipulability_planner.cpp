@@ -320,7 +320,7 @@ int main(int argc, char * argv[])
 {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<ManipulabilityPlanner>();
-    int CONTROL_HZ=10;
+    int CONTROL_HZ=100;
     rclcpp::Rate rate(CONTROL_HZ);
     std_msgs::msg::Bool execution_msg;
     execution_msg.data=false;
@@ -338,8 +338,8 @@ int main(int argc, char * argv[])
         node->execution_pub_->publish(execution_msg);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         if(count==0) std::cout<<"waiting for pointcloud "<<std::endl;
-        force_torque=node->get_force_torque();
-        std::cout<<force_torque.wrench.force.x<<std::endl;
+        // force_torque=node->get_force_torque();
+        // std::cout<<force_torque.wrench.force.x<<std::endl;
         count++;
     }
     start_pos=node->get_marker1();
@@ -397,18 +397,19 @@ int main(int argc, char * argv[])
     double target_force=2.0;
     double error=0, error_before=0;
     double ie=0,id=0;
-    double kp=0.001,ki=0.0,kd=0.0;
+    double kp=0.0001,ki=0.0,kd=0.0;
     double surface_modify=0.0;
 
     Eigen::Vector4d fk_col3 = node->get_fk_col3();
     
-    // while (rclcpp::ok()) {
-    //     rclcpp::spin_some(node);
-    //     node->execution_pub_->publish(execution_msg);
-    //     if(count>100) break;
-    //     count++;
-    // }
+    while (rclcpp::ok()) {
+        rclcpp::spin_some(node);
+        node->execution_pub_->publish(execution_msg);
+        if(count>100) break;
+        count++;
+    }
     count=0;
+    Eigen::Vector3d goal_pos_save=goal_pos;
 
     //追従制御開始
     while (rclcpp::ok()) {
@@ -417,12 +418,6 @@ int main(int argc, char * argv[])
 
         rclcpp::spin_some(node);
         force_torque=node->get_force_torque();
-
-        error = target_force-force_torque.wrench.force.z;
-        ie += error/CONTROL_HZ;
-        id = (error-error_before)/CONTROL_HZ;
-        error_before = error;
-        surface_modify += error*kp+ie*ki+id*kd;
 
         fk_col3 = node->get_fk_col3();
         Eigen::Vector3d z_current = fk_col3.head<3>();
@@ -433,22 +428,46 @@ int main(int argc, char * argv[])
 
         Eigen::Vector3d manip_direc = manip_trans.head<3>();
         current_pos = fk_col4.head<3>();
+        // std::cout<<"current z:    "<<current_pos(2)<<std::endl;
+        // current_pos=current_pos-z_current*surface_modify;
+        goal_pos=goal_pos_save+z_current*surface_modify;
         Eigen::Vector3d goal_vec=goal_pos-current_pos;
         double distance=goal_vec.norm();
-        std::cout<<"current:    "<<current_pos.transpose()<<std::endl;
+        // std::cout<<"current:    "<<current_pos.transpose()<<std::endl;
+
+        error = target_force-abs(force_torque.wrench.force.z);
+        error=0;
+        if(count<20) error = 1.5;
+        if(count>20) error = 1.0;
+        if(count>30) error = 0.5;
+        if(count>40) error = 0.0;
+        ie += error/CONTROL_HZ;
+        id = (error-error_before)/CONTROL_HZ;
+        error_before = error;
+        surface_modify += error*kp+ie*ki+id*kd;
 
         Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
         Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
 
         double stepsize=0.003;
         Eigen::Vector3d move_trans=stepsize*direction/direction.norm();
-        Eigen::Vector3d next_pos=current_pos+move_trans;
+        // Eigen::Vector3d next_pos=current_pos+move_trans;
+        Eigen::Vector3d next_pos=current_pos-z_current*surface_modify+move_trans;
         Eigen::Vector3d nearest_point = node->get_nearest_point3(next_pos,0.05);
+        // Eigen::Vector3d current_pos_save=current_pos;
+        // current_pos=nearest_point;
+        // nearest_point=nearest_point+z_current*surface_modify;
         Eigen::Vector3d nearest_move=nearest_point-current_pos;
+        // Eigen::Vector3d nearest_move=nearest_point-current_pos_save;
 
         Eigen::Matrix<double, 6,1> movement;
         // movement<<nearest_move,0,0,0;
         movement<<nearest_move+z_current*surface_modify,0,0,0;
+
+        // std::cout<<"nearest_move:      "<<nearest_move.transpose()<<std::endl;
+        std::cout<<"current:    "<<current_pos.transpose()<<std::endl;
+        std::cout<<"surface_modify: "<<surface_modify<<std::endl;
+        std::cout<<"count: "<<count<<std::endl;
 
         std_msgs::msg::Float64MultiArray movement_msg;
         movement_msg.data.resize(6);
@@ -467,11 +486,12 @@ int main(int argc, char * argv[])
             break;
         }
         node->movement_pub_->publish(movement_msg);
+        // current_pos=nearest_point;
         count++;
 
         end = std::chrono::system_clock::now();
         double time = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000.0);
-        printf("time %lf[ms]\n", time);
+        // printf("time %lf[ms]\n", time);
 
         rate.sleep();
     }
