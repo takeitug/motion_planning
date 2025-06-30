@@ -2,8 +2,9 @@
 
 namespace forwardkinematics {
 
-Eigen::Matrix<double, 4, 4> calcfk(const Eigen::VectorXd &joint_position){
-    double dbs = 0.34, dse = 0.4, dew = 0.4, dwf = 0.126;
+Eigen::Matrix<double, 4, 4> calcfk(const Eigen::VectorXd &joint_position, double dwf=0.126){
+    // double dbs = 0.34, dse = 0.4, dew = 0.4, dwf = 0.126;
+    double dbs = 0.34, dse = 0.4, dew = 0.4;
     double th1 = joint_position[0], th2 = joint_position[1], th3 = joint_position[2], th4 = joint_position[3], th5 = joint_position[4], th6 = joint_position[5], th7 = joint_position[6];
 
     Eigen::Matrix<double, 4, 4> T01;

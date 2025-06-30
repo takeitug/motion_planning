@@ -13,9 +13,23 @@
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/wrench_stamped.hpp>
 
+#include "motion_planning/nanoflann.hpp"
+
 class ManipulabilityPlanner : public rclcpp::Node
 {
 public:
+    using PointCloudMatrix = Eigen::Matrix<float, Eigen::Dynamic, 3, Eigen::RowMajor>;
+    struct PointCloudAdaptor {
+        const PointCloudMatrix &obj;
+        PointCloudAdaptor(const PointCloudMatrix &obj_) : obj(obj_) {}
+        inline size_t kdtree_get_point_count() const { return obj.rows(); }
+        inline float kdtree_get_pt(const size_t idx, int dim) const { return obj(idx, dim); }
+        template <class BBOX> bool kdtree_get_bbox(BBOX&) const { return false; }
+    };
+    using KDTree = nanoflann::KDTreeSingleIndexAdaptor<
+        nanoflann::L2_Simple_Adaptor<float, PointCloudAdaptor>,
+        PointCloudAdaptor, 3>;
+
     ManipulabilityPlanner()
     : Node("manipulability_planner"),
       manip_(0.0),
@@ -24,7 +38,8 @@ public:
       fk_col4_(Eigen::Vector4d::Zero()),
       got_pointcloud_(false),
       got_marker1_(false),
-      got_marker2_(false)
+      got_marker2_(false),
+      kd_tree_built_(false)
     {
         manip_sub_ = this->create_subscription<std_msgs::msg::Float64>(
             "manipulability", 10,
@@ -107,6 +122,8 @@ public:
                 leptrino_force_torque.wrench.torque.y = msg->wrench.torque.y;
                 leptrino_force_torque.wrench.torque.z = msg->wrench.torque.z;
             });
+
+        
     }
 
     rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr destination_pub_;
@@ -114,18 +131,18 @@ public:
     rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr movement_pub_;
 
     // PointCloud2→Eigen行列（Nx3）
-    void parse_pointcloud(const sensor_msgs::msg::PointCloud2 & msg) {
-        size_t n = msg.width * msg.height;
-        saved_cloud_mat_.resize(n, 3);
-        sensor_msgs::PointCloud2ConstIterator<float> iter_x(msg, "x");
-        sensor_msgs::PointCloud2ConstIterator<float> iter_y(msg, "y");
-        sensor_msgs::PointCloud2ConstIterator<float> iter_z(msg, "z");
-        for (size_t i = 0; i < n; ++i, ++iter_x, ++iter_y, ++iter_z) {
-            saved_cloud_mat_(i, 0) = *iter_x;
-            saved_cloud_mat_(i, 1) = *iter_y;
-            saved_cloud_mat_(i, 2) = *iter_z;
-        }
-    }
+    // void parse_pointcloud(const sensor_msgs::msg::PointCloud2 & msg) {
+    //     size_t n = msg.width * msg.height;
+    //     saved_cloud_mat_.resize(n, 3);
+    //     sensor_msgs::PointCloud2ConstIterator<float> iter_x(msg, "x");
+    //     sensor_msgs::PointCloud2ConstIterator<float> iter_y(msg, "y");
+    //     sensor_msgs::PointCloud2ConstIterator<float> iter_z(msg, "z");
+    //     for (size_t i = 0; i < n; ++i, ++iter_x, ++iter_y, ++iter_z) {
+    //         saved_cloud_mat_(i, 0) = *iter_x;
+    //         saved_cloud_mat_(i, 1) = *iter_y;
+    //         saved_cloud_mat_(i, 2) = *iter_z;
+    //     }
+    // }
 
     // 最近傍点を抽出
     Eigen::Vector3d get_nearest_point(const Eigen::Vector3d& next_pos) const {
@@ -214,6 +231,56 @@ public:
         return direc;
     }
 
+    void parse_pointcloud(const sensor_msgs::msg::PointCloud2 & msg) {
+        size_t n = msg.width * msg.height;
+        saved_cloud_mat_.resize(n, 3);
+        sensor_msgs::PointCloud2ConstIterator<float> iter_x(msg, "x");
+        sensor_msgs::PointCloud2ConstIterator<float> iter_y(msg, "y");
+        sensor_msgs::PointCloud2ConstIterator<float> iter_z(msg, "z");
+        for (size_t i = 0; i < n; ++i, ++iter_x, ++iter_y, ++iter_z) {
+            saved_cloud_mat_(i, 0) = *iter_x;
+            saved_cloud_mat_(i, 1) = *iter_y;
+            saved_cloud_mat_(i, 2) = *iter_z;
+        }
+        // KD-Tree構築
+        adaptor_ = std::make_unique<PointCloudAdaptor>(saved_cloud_mat_);
+        kd_tree_ = std::make_unique<KDTree>(3, *adaptor_, nanoflann::KDTreeSingleIndexAdaptorParams(10));
+        kd_tree_->buildIndex();
+        kd_tree_built_ = true;
+    }
+
+    // nanoflannによる高速最近傍探索
+    Eigen::Vector3d get_nearest_point3(const Eigen::Vector3d& next_pos, double roi = 0.05) const {
+    if (!got_pointcloud_ || !kd_tree_built_) return Eigen::Vector3d::Zero();
+    float query_pt[3] = {static_cast<float>(next_pos.x()), static_cast<float>(next_pos.y()), static_cast<float>(next_pos.z())};
+    const float search_radius = roi * roi; // nanoflannは距離の2乗
+    std::vector<std::pair<size_t, float>> ret_matches;
+    nanoflann::SearchParams params;
+    kd_tree_->radiusSearch(query_pt, search_radius, ret_matches, params);
+
+    if (ret_matches.empty()) {
+        // ROI内に点がなければグローバル最近傍
+        size_t ret_index;
+        float out_dist_sqr;
+        nanoflann::KNNResultSet<float> resultSet(1);
+        resultSet.init(&ret_index, &out_dist_sqr);
+        kd_tree_->findNeighbors(resultSet, query_pt, nanoflann::SearchParams(10));
+        return saved_cloud_mat_.row(ret_index).cast<double>();
+    }
+
+    // ROI内でnext_posに最も近い点を探す（距離2乗が最小のもの）
+    size_t best_idx = ret_matches[0].first;
+    float best_dist = ret_matches[0].second;
+    for (const auto& match : ret_matches) {
+        if (match.second < best_dist) {
+            best_idx = match.first;
+            best_dist = match.second;
+        }
+    }
+    return saved_cloud_mat_.row(best_idx).cast<double>();
+}
+
+
 private:
     double manip_;
     Eigen::VectorXd manip_trans_;  // size 6
@@ -237,6 +304,11 @@ private:
     double check_;
     rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr leptrino_sub_;
     geometry_msgs::msg::WrenchStamped leptrino_force_torque;
+
+    PointCloudMatrix saved_cloud_mat_; // Nx3
+    mutable std::unique_ptr<PointCloudAdaptor> adaptor_;
+    mutable std::unique_ptr<KDTree> kd_tree_;
+    bool kd_tree_built_;
 };
 
 int main(int argc, char * argv[])
@@ -353,8 +425,9 @@ int main(int argc, char * argv[])
         Eigen::Vector3d next_pos=current_pos+move_trans;
         // std::cout<<"next:      "<<next_pos.transpose()<<std::endl;
 
-        Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
+        // Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);
         // Eigen::Vector3d nearest_point = node->get_nearest_point2(next_pos,0.05);
+        Eigen::Vector3d nearest_point = node->get_nearest_point3(next_pos,0.05);
         // std::cout << "nearest:    " << nearest_point.transpose() << std::endl;
 
         // Eigen::Vector3d nearest_point = node->get_nearest_point(next_pos);

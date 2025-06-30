@@ -2,10 +2,11 @@
 
 namespace inversekinematics {
 
-Eigen::Matrix<double, 6, 7> calcJacobian(const Eigen::VectorXd &joint_position) {
+Eigen::Matrix<double, 6, 7> calcJacobian(const Eigen::VectorXd &joint_position, double dwf=0.126) {
     // ここにヤコビ行列計算の実装を書く
     //double dbs = 340, dse = 400, dew = 400, dwf = 126;
-    double dbs = 0.34, dse = 0.4, dew = 0.4, dwf = 0.126;
+    // double dbs = 0.34, dse = 0.4, dew = 0.4, dwf = 0.126;
+    double dbs = 0.34, dse = 0.4, dew = 0.4;
     double th1 = joint_position[0], th2 = joint_position[1], th3 = joint_position[2], th4 = joint_position[3], th5 = joint_position[4], th6 = joint_position[5], th7 = joint_position[6];
 
     double J11 = dwf * (cos(th6) * (sin(th4) * (cos(th1) * sin(th3) + cos(th2) * cos(th3) * sin(th1)) - cos(th4) * sin(th1) * sin(th2)) - sin(th6) * (cos(th5) * (cos(th4) * (cos(th1) * sin(th3) + cos(th2) * cos(th3) * sin(th1)) + sin(th1) * sin(th2) * sin(th4)) + sin(th5) * (cos(th1) * cos(th3) - cos(th2) * sin(th1) * sin(th3)))) + dew * (sin(th4) * (cos(th1) * sin(th3) + cos(th2) * cos(th3) * sin(th1)) - cos(th4) * sin(th1) * sin(th2)) - dse * sin(th1) * sin(th2);

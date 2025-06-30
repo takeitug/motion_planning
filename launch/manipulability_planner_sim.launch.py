@@ -33,6 +33,12 @@ def hidden_setup(context: LaunchContext) -> List[LaunchDescriptionEntity]:
                 {"use_sim_time": use_sim_time},
                 LBRDescriptionMixin.param_robot_name(),
             ],
+            output='screen',
+        )
+        Node(
+            package='motion_planning',
+            executable='manipulability_client',
+            output='screen',
         )
     )
     return ld.entities

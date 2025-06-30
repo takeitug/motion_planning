@@ -62,6 +62,9 @@ ament_target_dependencies(manipulability_planner rclcpp sensor_msgs Eigen3 std_m
 
 add_executable(manipulability_planner_sim src/manipulability_planner_sim.cpp)
 ament_target_dependencies(manipulability_planner_sim rclcpp sensor_msgs Eigen3 std_msgs geometry_msgs moveit_ros_planning_interface)
+target_include_directories(manipulability_planner_sim PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
 # ヘッダファイルのインストール
 install(DIRECTORY include/
