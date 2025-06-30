@@ -36,6 +36,7 @@ public:
       manip_trans_(Eigen::VectorXd::Zero(6)),
       fk_mat_(Eigen::Matrix4d::Zero()),
       fk_col4_(Eigen::Vector4d::Zero()),
+      fk_col3_(Eigen::Vector4d::Zero()),
       got_pointcloud_(false),
       got_marker1_(false),
       got_marker2_(false),
@@ -60,6 +61,7 @@ public:
                 if (msg->data.size() == 16) {
                     fk_mat_ = Eigen::Map<const Eigen::Matrix<double, 4, 4, Eigen::RowMajor>>(msg->data.data());
                     fk_col4_ = fk_mat_.col(3);
+                    fk_col3_ = fk_mat_.col(2);
                 }
             });
         
@@ -192,6 +194,7 @@ public:
     double get_manip() const { return manip_; }
     Eigen::VectorXd get_manip_trans() const { return manip_trans_; }
     Eigen::Vector4d get_fk_col4() const { return fk_col4_; }
+    Eigen::Vector4d get_fk_col3() const { return fk_col3_; }
     Eigen::Matrix4d get_fk_mat() const { return fk_mat_; }
 
     bool got_pointcloud() const { return got_pointcloud_; }
@@ -287,6 +290,7 @@ private:
     Eigen::VectorXd manip_trans_;  // size 6
     Eigen::Matrix4d fk_mat_;       // 4x4
     Eigen::Vector4d fk_col4_;      // 4x1
+    Eigen::Vector4d fk_col3_;      // 4x1
     rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr manip_sub_;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr manip_trans_sub_;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr fk_sub_;
@@ -316,7 +320,8 @@ int main(int argc, char * argv[])
 {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<ManipulabilityPlanner>();
-    rclcpp::Rate rate(10);
+    int CONTROL_HZ=10;
+    rclcpp::Rate rate(CONTROL_HZ);
     std_msgs::msg::Bool execution_msg;
     execution_msg.data=false;
     int count=0;
@@ -388,6 +393,14 @@ int main(int argc, char * argv[])
 
     double coef_manip=0.5;
     double coef_pos=1.0;
+
+    double target_force=2.0;
+    double error=0, error_before=0;
+    double ie=0,id=0;
+    double kp=0.001,ki=0.0,kd=0.0;
+    double surface_modify=0.0;
+
+    Eigen::Vector4d fk_col3 = node->get_fk_col3();
     
     // while (rclcpp::ok()) {
     //     rclcpp::spin_some(node);
@@ -404,6 +417,15 @@ int main(int argc, char * argv[])
 
         rclcpp::spin_some(node);
         force_torque=node->get_force_torque();
+
+        error = target_force-force_torque.wrench.force.z;
+        ie += error/CONTROL_HZ;
+        id = (error-error_before)/CONTROL_HZ;
+        error_before = error;
+        surface_modify += error*kp+ie*ki+id*kd;
+
+        fk_col3 = node->get_fk_col3();
+        Eigen::Vector3d z_current = fk_col3.head<3>();
 
         double manip = node->get_manip();
         manip_trans = node->get_manip_trans();
@@ -425,7 +447,8 @@ int main(int argc, char * argv[])
         Eigen::Vector3d nearest_move=nearest_point-current_pos;
 
         Eigen::Matrix<double, 6,1> movement;
-        movement<<nearest_move,0,0,0;
+        // movement<<nearest_move,0,0,0;
+        movement<<nearest_move+z_current*surface_modify,0,0,0;
 
         std_msgs::msg::Float64MultiArray movement_msg;
         movement_msg.data.resize(6);
@@ -444,10 +467,7 @@ int main(int argc, char * argv[])
             break;
         }
         node->movement_pub_->publish(movement_msg);
-        // std::cout << "count: " << count << std::endl;
-        // std::cout << "check: " << node->get_check() << std::endl;
         count++;
-        //std::cout<<"movement "<<movement<<std::endl;
 
         end = std::chrono::system_clock::now();
         double time = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000.0);

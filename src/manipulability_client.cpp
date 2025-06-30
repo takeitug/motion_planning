@@ -535,7 +535,7 @@ int main(int argc, char * argv[])
         joints[6]+=q_dt(6,0);
         // if(count<1) node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},1);
         // if(count>10) node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},0.2);
-        node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},0.8);
+        node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},0.2);
         node->process();
         std_msgs::msg::Float64 check_msg;
         check_msg.data=count;
