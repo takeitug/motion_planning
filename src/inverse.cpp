@@ -92,7 +92,8 @@ Eigen::Matrix<double, 7, 6> calcJacobianInverse(const Eigen::MatrixXd &jacobian)
 
 Eigen::Matrix<double, 6, 7> Jacobian_trans(const Eigen::MatrixXd &jacobian){
     Eigen::Matrix<double, 6, 7> J_trans;
-    J_trans << jacobian.topRows(3), Eigen::Matrix<double, 3, 7>::Zero();
+    // J_trans << jacobian.topRows(3), Eigen::Matrix<double, 3, 7>::Zero();
+    J_trans << jacobian.topRows(2), Eigen::Matrix<double, 4, 7>::Zero();
     return J_trans;
 }
 

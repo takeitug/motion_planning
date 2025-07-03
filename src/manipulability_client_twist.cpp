@@ -5,6 +5,7 @@
 #include <iostream>
 #include <thread>
 #include <algorithm>
+#include <fstream>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
@@ -42,7 +43,7 @@ double deg2rad(double degrees) {
 
 //endoefector dwf=0.226
 //robot dwf=0.126
-double dwf=0.226;
+double dwf=0.241;//offset=0.115
 
 class ManipulabilityClient : public rclcpp::Node
 {
@@ -248,6 +249,30 @@ public:
         return direc;
     }
 
+    Eigen::Vector3d manip_potential(const Eigen::VectorXd& joint, const Eigen::Matrix<double, 7, 6> Jinv, const double manip) {
+        Eigen::Matrix<double, 6,1> movement;
+        movement<<0.01,0,0,0,0,0;
+
+        Eigen::VectorXd joint_x=joint+Jinv*movement;
+
+        Eigen::Matrix<double, 6, 7> J_x = inversekinematics::calcJacobian(joint_x,dwf);
+        double manip_x = manipulability::calcmanipulability(J_x);
+
+        movement<<0,0.01,0,0,0,0;
+
+        Eigen::VectorXd joint_y=joint+Jinv*movement;
+
+        Eigen::Matrix<double, 6, 7> J_y = inversekinematics::calcJacobian(joint_y,dwf);
+        double manip_y = manipulability::calcmanipulability(J_y);
+
+        Eigen::Vector3d direc;
+        direc[0] = manip_x - manip;
+        direc[1] = manip_y - manip;
+        direc[2] = manip - manip;
+
+        return direc;
+    }
+
     void parse_pointcloud(const sensor_msgs::msg::PointCloud2 & msg) {
         size_t n = msg.width * msg.height;
         saved_cloud_mat_.resize(n, 3);
@@ -390,6 +415,7 @@ public:
             }
         }
         fk_pub_->publish(fk_msg);
+        // std::cout<<FK_<<std::endl;
     }
 
     void execute(const std::vector<double> &positions, const int32_t &sec_from_start = 10) {
@@ -596,8 +622,10 @@ int main(int argc, char * argv[])
     int count=0;
 
     RCLCPP_INFO(node->get_logger(), "goes to initial position");
+    std::vector<double> positions = {deg2rad(18.62),deg2rad(93.26),deg2rad(110.67),deg2rad(-75.41),deg2rad(-117.52),deg2rad(-91.32),deg2rad(-3.29)};
     // node->execute({deg2rad(-20.0),deg2rad(80.0),deg2rad(100.0),deg2rad(-80.0),deg2rad(-80.0),deg2rad(-80.0),deg2rad(20.0),});
-    node->execute({deg2rad(18.62),deg2rad(93.26),deg2rad(110.67),deg2rad(-75.41),deg2rad(-117.52),deg2rad(-91.32),deg2rad(-3.29),},4);
+    // node->execute({deg2rad(18.62),deg2rad(93.26),deg2rad(110.67),deg2rad(-75.41),deg2rad(-117.52),deg2rad(-91.32),deg2rad(-3.29),},6);
+    node->execute(positions,6);
     std_msgs::msg::Bool setinitialposition_msg;
     setinitialposition_msg.data=true;
     node->setinitialposition_pub_->publish(setinitialposition_msg);
@@ -624,15 +652,28 @@ int main(int argc, char * argv[])
     }
 
     start_pos=node->get_marker1();
+    start_pos=node->get_nearest_point3(start_pos,0.05);
     goal_pos=node->get_marker2();
-
-    count=0;
+    goal_pos=node->get_nearest_point3(goal_pos,0.05);
 
     Eigen::Vector3d dest=start_pos;
-    Eigen::VectorXd joints=node->joints_;
     Eigen::Matrix<double,4,4> FK=node->FK_;
     Eigen::Vector3d current;
     current<<FK(0,3),FK(1,3),FK(2,3);
+
+    Eigen::Vector3d start_vec=start_pos-current;
+    double start_dist=start_vec.norm();
+    start_vec=goal_pos-current;
+    if(start_dist>start_vec.norm()){
+        dest=start_pos;
+        start_pos=goal_pos;
+        goal_pos=dest;
+    }
+
+    count=0;
+
+    dest=start_pos;
+    Eigen::VectorXd joints=node->joints_;
     Eigen::Matrix<double, 6, 7> J=node->J_;
     Eigen::Matrix<double, 7, 6> J_inv=node->J_inv_;
 
@@ -703,114 +744,344 @@ int main(int argc, char * argv[])
         joints[4],
         joints[5],
         joints[6],
-    },4);
+    },5);
 
-    double coef_manip=0.5;
+    double coef_manip=0;//30
     double coef_pos=1.0;
 
-    double target_force=2.0;
+    double target_force=3.0;
     double error=0, error_before=0;
     double ie=0,id=0;
-    double kp=0.0001,ki=0.0,kd=0.0;
+    double kp=0.00005,ki=0.0,kd=0.0;
     double surface_modify=0.0;
+    double surface_modify_save=0.0;
 
     Eigen::Vector3d goal_pos_save=goal_pos;
     Eigen::Vector3d current_pos;
 
     int CONTROL_HZ=100;
 
+    int split_count=5;
+    int move_count=0;
+    Eigen::Vector3d nearest_move=Eigen::Vector3d::Zero();
+    Eigen::Vector3d move_step=Eigen::Vector3d::Zero();
+
     //追従制御開始
     rclcpp::Rate rate2(CONTROL_HZ);  // 100Hz
+
+    std::string input;
+    std::cout<<"Execute ? y/n"<<std::endl;
+    std::cin>> input;
     node->process2(joints);
-    while (rclcpp::ok()) {
-        std::chrono::system_clock::time_point start, end;
-        start = std::chrono::system_clock::now();
 
-        rclcpp::spin_some(node);
-        joints=node->joints_;
-        J_inv=node->J_inv_;
-        FK=node->FK_;
+    if(input=="y"){
+        std::ofstream fo("/home/isrlab/colcon_ws/src/motion_planning/src/data.csv");
+        fo<<"joint1,2,3,4,5,6,7,manip,x,y,z,force"<<std::endl;
 
-        //////////////////////////////////////////////
-        force_torque=node->get_force_torque();
+        while (rclcpp::ok()) {
+            rclcpp::spin_some(node);
+            joints=node->joints_;
+            J_inv=node->J_inv_;
+            FK=node->FK_;
 
-        Eigen::Vector3d z_current;
-        z_current<<FK(0,2),FK(1,2),FK(2,2);
+            //////////////////////////////////////////////
+            force_torque=node->get_force_torque();
 
-        Eigen::VectorXd manip_trans = node->manipulability_trans_;
+            Eigen::Vector3d z_current;
+            z_current<<FK(0,2),FK(1,2),FK(2,2);
 
-        Eigen::Vector3d manip_direc = manip_trans.head<3>();
-        current_pos<<FK(0,3),FK(1,3),FK(2,3);
-        goal_pos=goal_pos_save+z_current*surface_modify;
-        Eigen::Vector3d goal_vec=goal_pos-current_pos;
-        double distance=goal_vec.norm();
+            Eigen::VectorXd manip_trans = node->manipulability_trans_;
 
-        error = target_force-abs(force_torque.wrench.force.z);
-        // error=0;
-        // if(count<20) error = 1.5;
-        // if(count>20) error = 1.0;
-        // if(count>30) error = 0.5;
-        // if(count>40) error = 0.0;
-        ie += error/CONTROL_HZ;
-        id = (error-error_before)/CONTROL_HZ;
-        error_before = error;
-        surface_modify += error*kp+ie*ki+id*kd;
+            // Eigen::Vector3d manip_direc = manip_trans.head<3>();
+            // current_pos<<FK(0,3),FK(1,3),FK(2,3);
+            // goal_pos=goal_pos_save+z_current*surface_modify;
+            // Eigen::Vector3d goal_vec=goal_pos-current_pos;
+            // double distance=goal_vec.norm();
 
-        if(abs(surface_modify)>0.05){
-            std::cout<<"stop due to pointcloud or force error"<<std::endl;
-            break;
-        }
-
-        Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
-        Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
-
-        double stepsize=0.003;
-        Eigen::Vector3d move_trans=stepsize*direction/direction.norm();
-        Eigen::Vector3d next_pos=current_pos-z_current*surface_modify+move_trans;
-        Eigen::Vector3d nearest_point = node->get_nearest_point3(next_pos,0.05);
-        Eigen::Vector3d nearest_move=nearest_point-current_pos;
-
-        Eigen::Matrix<double, 6,1> movement;
-        // movement<<nearest_move,0,0,0;
-        movement<<nearest_move+z_current*surface_modify,0,0,0;
-
-        // std::cout<<"current:    "<<current_pos.transpose()<<std::endl;
-        std::cout<<"surface_modify: "<<surface_modify<<std::endl;
-        std::cout<<"count: "<<count<<std::endl;
-        // std::cout<<"movement "<<movement.transpose()<<std::endl;
-        std::cout<<"distance "<<distance<<std::endl;
-
-        if (distance<0.01){
-            for (int i = 0; i < 6; ++i) {
-                movement[i] = 0;
+            error = target_force-abs(force_torque.wrench.force.z);
+            std::cout<<"tuch error: "<<error<<std::endl;
+            error=0;
+            if(error<0.5){
+                break;
             }
-            std::cout<<"end     x: "<<current_pos(0)<<"  y: "<<current_pos(1)<<"  z: "<<current_pos(2)<<std::endl;
-            std::cout<<"goal: "<<goal_pos.transpose()<<std::endl;
-            break;
+            // error=0;
+            // if(count<20) error = 1.5;
+            // if(count>20) error = 1.0;
+            // if(count>30) error = 0.5;
+            // if(count>40) error = 0.0;
+            ie += error/CONTROL_HZ;
+            id = (error-error_before)/CONTROL_HZ;
+            error_before = error;
+            surface_modify_save=surface_modify;
+            surface_modify += (error*kp+ie*ki+id*kd);
+            std::cout<<"surface_modify: "<<surface_modify<<std::endl;
+
+            if(abs(surface_modify)>0.05){
+                std::cout<<"stop due to pointcloud or force error"<<std::endl;
+                break;
+            }
+
+            Eigen::Matrix<double, 6,1> movement;
+            // movement<<nearest_move,0,0,0;
+            movement<<z_current*(surface_modify-surface_modify_save),0,0,0;
+
+            // std::cout<<"current:    "<<current_pos.transpose()<<std::endl;
+            // std::cout<<"error: "<<error<<std::endl;
+            // std::cout<<"surface_modify: "<<surface_modify<<std::endl;
+            // std::cout<<"count: "<<count<<std::endl;
+            // std::cout<<"movement "<<movement.transpose()<<std::endl;
+            // std::cout<<"distance "<<distance<<std::endl;
+
+            ///////////////////////////////////////////////////////////////////////
+
+            if(abs(force_torque.wrench.force.z)>5){
+                for (int i = 0; i < 6; ++i) {
+                    movement[i] = 0;
+                }
+                std::cout<<"much pressure!"<<std::endl;
+            }
+            
+            q_dt=J_inv*movement;
+            joints[0]+=q_dt(0,0);
+            joints[1]+=q_dt(1,0);
+            joints[2]+=q_dt(2,0);
+            joints[3]+=q_dt(3,0);
+            joints[4]+=q_dt(4,0);
+            joints[5]+=q_dt(5,0);
+            joints[6]+=q_dt(6,0);
+
+
+            node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},1.5);
+            // node->process();
+            node->process2(joints);
+            count++;
+
+            // rate2.sleep();
         }
-        ///////////////////////////////////////////////////////////////////////
-        
-        q_dt=J_inv*movement;
-        joints[0]+=q_dt(0,0);
-        joints[1]+=q_dt(1,0);
-        joints[2]+=q_dt(2,0);
-        joints[3]+=q_dt(3,0);
-        joints[4]+=q_dt(4,0);
-        joints[5]+=q_dt(5,0);
-        joints[6]+=q_dt(6,0);
-        // if(count<1) node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},1);
-        // if(count>10) node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},0.2);
-        // node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},0.8);
-        // node->process();
-        node->process2(joints);
-        count++;
+        error=0, error_before=0;
+        ie=0,id=0;
+        count=0;
+        std::cout<<"track start"<<std::endl;
 
-        end = std::chrono::system_clock::now();
-        double time = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000.0);
-        printf("time %lf[ms]\n", time);
+        // while (rclcpp::ok()) {
+        //     std::chrono::system_clock::time_point start, end;
+        //     start = std::chrono::system_clock::now();
 
-        rate2.sleep();
+        //     rclcpp::spin_some(node);
+        //     joints=node->joints_;
+        //     J_inv=node->J_inv_;
+        //     FK=node->FK_;
+
+        //     //////////////////////////////////////////////
+        //     force_torque=node->get_force_torque();
+
+        //     Eigen::Vector3d z_current;
+        //     z_current<<FK(0,2),FK(1,2),FK(2,2);
+
+        //     Eigen::VectorXd manip_trans = node->manipulability_trans_;
+
+        //     Eigen::Vector3d manip_direc = manip_trans.head<3>();
+        //     current_pos<<FK(0,3),FK(1,3),FK(2,3);
+        //     goal_pos=goal_pos_save+z_current*surface_modify;
+        //     Eigen::Vector3d goal_vec=goal_pos-current_pos;
+        //     double distance=goal_vec.norm();
+
+        //     error = target_force-abs(force_torque.wrench.force.z);
+        //     // error=0;
+        //     // if(count<20) error = 1.5;
+        //     // if(count>20) error = 1.0;
+        //     // if(count>30) error = 0.5;
+        //     // if(count>40) error = 0.0;
+        //     ie += error/CONTROL_HZ;
+        //     id = (error-error_before)/CONTROL_HZ;
+        //     error_before = error;
+        //     surface_modify += error*kp+ie*ki+id*kd;
+
+        //     if(abs(surface_modify)>0.05){
+        //         std::cout<<"stop due to pointcloud or force error"<<std::endl;
+        //         break;
+        //     }
+
+        //     Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
+        //     Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
+
+        //     double stepsize=0.003;
+        //     Eigen::Vector3d move_trans=stepsize*direction/direction.norm();
+        //     Eigen::Vector3d next_pos=current_pos-z_current*surface_modify+move_trans;
+        //     Eigen::Vector3d nearest_point = node->get_nearest_point3(next_pos,0.05);
+        //     Eigen::Vector3d nearest_move=nearest_point-current_pos;
+
+        //     Eigen::Matrix<double, 6,1> movement;
+        //     // movement<<nearest_move,0,0,0;
+        //     movement<<nearest_move+z_current*surface_modify,0,0,0;
+
+        //     // std::cout<<"current:    "<<current_pos.transpose()<<std::endl;
+        //     std::cout<<"surface_modify: "<<surface_modify<<std::endl;
+        //     std::cout<<"count: "<<count<<std::endl;
+        //     // std::cout<<"movement "<<movement.transpose()<<std::endl;
+        //     std::cout<<"distance "<<distance<<std::endl;
+
+        //     if (distance<0.01){
+        //         for (int i = 0; i < 6; ++i) {
+        //             movement[i] = 0;
+        //         }
+        //         std::cout<<"end     x: "<<current_pos(0)<<"  y: "<<current_pos(1)<<"  z: "<<current_pos(2)<<std::endl;
+        //         std::cout<<"goal: "<<goal_pos.transpose()<<std::endl;
+        //         break;
+        //     }
+        //     ///////////////////////////////////////////////////////////////////////
+
+        //     if(abs(force_torque.wrench.force.z)>5){
+        //         for (int i = 0; i < 6; ++i) {
+        //             movement[i] = 0;
+        //         }
+        //         std::cout<<"much pressure!"<<std::endl;
+        //     }
+            
+        //     q_dt=J_inv*movement;
+        //     joints[0]+=q_dt(0,0);
+        //     joints[1]+=q_dt(1,0);
+        //     joints[2]+=q_dt(2,0);
+        //     joints[3]+=q_dt(3,0);
+        //     joints[4]+=q_dt(4,0);
+        //     joints[5]+=q_dt(5,0);
+        //     joints[6]+=q_dt(6,0);
+        //     // if(count<1) node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},1);
+        //     // if(count>10) node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},0.2);
+        //     // node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},0.8);
+        //     // node->process();
+        //     node->process2(joints);
+        //     count++;
+
+        //     end = std::chrono::system_clock::now();
+        //     double time = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000.0);
+        //     printf("time %lf[ms]\n", time);
+
+        //     rate2.sleep();
+        // }
+        count=0;
+
+        while (rclcpp::ok()) {
+            rclcpp::spin_some(node);
+            joints=node->joints_;
+            J_inv=node->J_inv_;
+            FK=node->FK_;
+            double manip=node->manip_;
+
+            //////////////////////////////////////////////
+            force_torque=node->get_force_torque();
+
+            fo<<joints[0]<<","<<joints[1]<<","<<joints[2]<<","<<joints[3]<<","<<joints[4]<<","<<joints[5]<<","<<joints[6]<<","<<manip<<","<<FK(0,3)<<","<<FK(1,3)<<","<<FK(2,3)<<","<<force_torque.wrench.force.z<<","<<std::endl;
+
+            Eigen::Vector3d z_current;
+            z_current<<FK(0,2),FK(1,2),FK(2,2);
+
+            // Eigen::VectorXd manip_trans = node->manipulability_trans_;
+            // Eigen::Vector3d manip_direc = manip_trans.head<3>();
+            Eigen::Vector3d manip_direc = node->manip_potential(joints, J_inv,manip);
+            current_pos<<FK(0,3),FK(1,3),FK(2,3);
+            goal_pos=goal_pos_save+z_current*surface_modify;
+            Eigen::Vector3d goal_vec=goal_pos-current_pos;
+            double distance=goal_vec.norm();
+
+            error = target_force-abs(force_torque.wrench.force.z);
+            error=0;
+            // if(count<20) error = 1.5;
+            // if(count>20) error = 1.0;
+            // if(count>30) error = 0.5;
+            // if(count>40) error = 0.0;
+            ie += error/CONTROL_HZ;
+            id = (error-error_before)/CONTROL_HZ;
+            error_before = error;
+            surface_modify_save=surface_modify;
+            surface_modify += error*kp+ie*ki+id*kd;
+
+            if(abs(surface_modify)>0.05){
+                std::cout<<"stop due to pointcloud or force error"<<std::endl;
+                break;
+            }
+
+            Eigen::Vector3d goal_pot=node->potential(current_pos, goal_pos,distance);
+            Eigen::Vector3d direction=coef_manip*manip_direc+coef_pos*goal_pot;
+
+            double stepsize=0.005;
+            Eigen::Vector3d move_trans=stepsize*direction/direction.norm();
+            Eigen::Vector3d next_pos=current_pos-z_current*surface_modify+move_trans;
+            Eigen::Vector3d nearest_point = node->get_nearest_point3(next_pos,0.05);
+
+            nearest_move=nearest_point-current_pos;
+            nearest_move(2)=0;
+            move_step=nearest_move/split_count;
+
+            // if(move_count==0){
+            //     nearest_move=nearest_point-current_pos;
+            //     nearest_move(2)=0;
+            //     move_step=nearest_move/split_count;
+            // }
+            // move_count++;
+            // if(move_count>=split_count){
+            //     move_count=0;
+            // }
+
+            // if(abs(force_torque.wrench.force.z)>10){
+            //     for (int i = 0; i < 3; ++i) {
+            //         nearest_move[i] = 0;
+            //     }
+            //     std::cout<<"much pressure!"<<std::endl;
+            // }
+
+            Eigen::Matrix<double, 6,1> movement;
+            // movement<<nearest_move,0,0,0;
+            // movement<<nearest_move+z_current*(surface_modify-surface_modify_save),0,0,0;
+            movement<<move_step+z_current*(surface_modify-surface_modify_save),0,0,0;
+
+            // std::cout<<"current:    "<<current_pos.transpose()<<std::endl;
+            std::cout<<"error: "<<error<<std::endl;
+            std::cout<<"surface_modify: "<<surface_modify<<std::endl;
+            std::cout<<"count: "<<count<<std::endl;
+            std::cout<<"distance "<<distance<<std::endl;
+
+            if (distance<0.01){
+                for (int i = 0; i < 6; ++i) {
+                    movement[i] = 0;
+                }
+                std::cout<<"end     x: "<<current_pos(0)<<"  y: "<<current_pos(1)<<"  z: "<<current_pos(2)<<std::endl;
+                std::cout<<"goal: "<<goal_pos.transpose()<<std::endl;
+                break;
+            }
+            ///////////////////////////////////////////////////////////////////////
+
+            if(abs(force_torque.wrench.force.z)>30){
+                for (int i = 0; i < 3; ++i) {
+                    movement[i] = 0;
+                }
+                std::cout<<"much pressure!"<<std::endl;
+            }
+            
+            q_dt=J_inv*movement;
+            joints[0]+=q_dt(0,0);
+            joints[1]+=q_dt(1,0);
+            joints[2]+=q_dt(2,0);
+            joints[3]+=q_dt(3,0);
+            joints[4]+=q_dt(4,0);
+            joints[5]+=q_dt(5,0);
+            joints[6]+=q_dt(6,0);
+
+
+            node->execute({joints[0],joints[1],joints[2],joints[3],joints[4],joints[5],joints[6]},0.7);
+            node->process();
+            // node->process2(joints);
+            count++;
+
+            if(count>700){
+                break;
+            }
+
+            // rate2.sleep();
+        }
     }
+
+    node->execute(positions,6);
 
     rclcpp::shutdown();
     return 0;
