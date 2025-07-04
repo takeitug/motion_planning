@@ -96,6 +96,21 @@ public:
         fk_pub_->publish(fk_msg);
     }
 
+    void position_pub()
+    {
+        if (last_position_.empty()) return;
+
+        joints_ = Eigen::VectorXd::Map(last_position_.data(), last_position_.size());
+        FK_ = forwardkinematics::calcfk(joints_,dwf);
+
+        std_msgs::msg::Float64MultiArray fk_msg;
+        fk_msg.data.resize(3); // 4x4=16
+        for(int i=0; i<3; ++i) {
+            fk_msg.data[i] = FK_(i, 3);
+        }
+        fk_pub_->publish(fk_msg);
+    }
+
     // サブスクライバコールバック（このまま）
     void topic_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
     {
@@ -141,7 +156,8 @@ int main(int argc, char * argv[])
 
     while (rclcpp::ok()) {
         rclcpp::spin_some(node);
-        node->process();
+        // node->process();
+        node->position_pub();
 
         // main内のどこからでも変数を参照・出力できる！
         // std::cout << "manip: " << node->manip_ << std::endl;
