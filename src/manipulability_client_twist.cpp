@@ -41,9 +41,10 @@ double deg2rad(double degrees) {
     return degrees * (PI / 180.0);
 }
 
-//endoefector dwf=0.226
 //robot dwf=0.126
-double dwf=0.241;//offset=0.115
+//sensor+printed_roller=0.241
+//sensor+metal_roller=0.233
+double dwf=0.233;
 
 class ManipulabilityClient : public rclcpp::Node
 {
