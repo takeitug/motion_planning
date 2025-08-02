@@ -21,14 +21,16 @@ class NormalClusterNode : public rclcpp::Node
 {
 public:
     NormalClusterNode()
-        : Node("normal_cluster_node"), received_point_cloud_(false),viewer_(new pcl::visualization::PCLVisualizer("Normals & Clusters"))
+        : Node("normal_cluster_node"),
+        received_point_cloud_(false),
+        finished_clusterring_(false)
     {
         sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
             "/capsule_cloud_transformed", 1,
             std::bind(&NormalClusterNode::cloud_callback, this, std::placeholders::_1));
         timer_ = this->create_wall_timer(1s, std::bind(&NormalClusterNode::timer_callback, this));
-        viewer_->setBackgroundColor(1.0, 1.0, 1.0);
-        viewer_->addCoordinateSystem(0.5);
+        // viewer_->setBackgroundColor(1.0, 1.0, 1.0);
+        // viewer_->addCoordinateSystem(0.5);
     }
 
 private:
@@ -38,13 +40,18 @@ private:
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_{new pcl::PointCloud<pcl::PointXYZ>};
     pcl::PointCloud<pcl::PointNormal>::Ptr normals_{new pcl::PointCloud<pcl::PointNormal>};
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> clusters_;
-    pcl::visualization::PCLVisualizer::Ptr viewer_;
+    // pcl::visualization::PCLVisualizer::Ptr viewer_;
+    bool finished_clusterring_;
 
     void cloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
         if (received_point_cloud_) return; // 1回のみ取得
         RCLCPP_INFO(this->get_logger(), "PointCloud received.");
         pcl::fromROSMsg(*msg, *cloud_);
+        if(cloud_->empty()){
+            RCLCPP_INFO(this->get_logger(), "PointCloud is empty.");
+            return;
+        }
         normals_->clear();
         pcl::copyPointCloud(*cloud_, *normals_);
         estimate_normals();
@@ -59,11 +66,19 @@ private:
             // 処理済みクラスタ法線方向を表示するだけ
             output_cluster_normals();
         }
-        viewer_->spinOnce(100);
+        // if(finished_clusterring_ && viewer_){
+        //     RCLCPP_INFO(this->get_logger(), "visualize");
+        //     viewer_->spinOnce(2000);
+        // }
+        // viewer_->spinOnce(100);
     }
 
     void estimate_normals()
     {
+        if(cloud_->empty()){
+            RCLCPP_INFO(this->get_logger(), "PointCloud is empty.");
+            return;
+        }
         pcl::NormalEstimation<pcl::PointNormal, pcl::PointNormal> ne;
         ne.setInputCloud(normals_);
         auto tree = pcl::search::KdTree<pcl::PointNormal>::Ptr(new pcl::search::KdTree<pcl::PointNormal>);
@@ -76,6 +91,10 @@ private:
     // クラスタリング
     void clustering()
     {
+        if(cloud_->empty()){
+            RCLCPP_INFO(this->get_logger(), "PointCloud is empty.");
+            return;
+        }
         std::vector<pcl::PointIndices> cluster_indices;
         pcl::ConditionalEuclideanClustering<pcl::PointNormal> cec(true);
         cec.setInputCloud(normals_);
@@ -100,48 +119,9 @@ private:
     }
 
     // クラスタごとの平均法線を出力
-    // void output_cluster_normals()
-    // {
-    //     for(size_t i=0; i<clusters_.size(); ++i){
-    //         Eigen::Vector3d avg_normal(0,0,0);
-    //         int count = 0;
-    //         for(const auto& pt : clusters_[i]->points){
-    //             Eigen::Vector3d n(pt.normal_x, pt.normal_y, pt.normal_z);
-    //             if(n.norm() > 1e-3) {
-    //                 avg_normal += n;
-    //                 count++;
-    //             }
-    //         }
-    //         if(count > 0) avg_normal /= count;
-    //         std::cout << "Cluster " << i
-    //                   << ": normal = (" << avg_normal.x() << ", " << avg_normal.y() << ", " << avg_normal.z() << ")"
-    //                   << ", points = " << count << std::endl;
-    //     }
-    // }
-
     void output_cluster_normals()
     {
-        viewer_->removeAllPointClouds();
-        viewer_->removeAllShapes();
-
-        // オリジナル点群描画
-        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> orig_color(cloud_, 100, 100, 100);
-        viewer_->addPointCloud(cloud_, orig_color, "cloud");
-        viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "cloud");
-
-        // クラスタを色分け描画＋法線ベクトルも表示
         for(size_t i=0; i<clusters_.size(); ++i){
-            std::string name = "cluster_" + std::to_string(i);
-            int r = (i*77)%256, g = (i*130)%256, b = (i*200)%256; // 適当な色分け
-
-            pcl::visualization::PointCloudColorHandlerCustom<pcl::PointNormal> cluster_color(clusters_[i], r, g, b);
-            viewer_->addPointCloud<pcl::PointNormal>(clusters_[i], cluster_color, name);
-            viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 5, name);
-
-            // 法線ベクトルを数点ごとに描画
-            viewer_->addPointCloudNormals<pcl::PointNormal>(clusters_[i], 10, 0.2, name + "_normals");
-
-            // 平均法線も出力
             Eigen::Vector3d avg_normal(0,0,0);
             int count = 0;
             for(const auto& pt : clusters_[i]->points){
@@ -157,6 +137,54 @@ private:
                       << ", points = " << count << std::endl;
         }
     }
+
+    // void output_cluster_normals()
+    // {
+    //     finished_clusterring_=false;
+    //     RCLCPP_INFO(this->get_logger(), "remove all");
+    //     viewer_->removeAllPointClouds();
+    //     viewer_->removeAllShapes();
+
+    //     // オリジナル点群描画
+    //     RCLCPP_INFO(this->get_logger(), "add original");
+    //     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> orig_color(cloud_, 100, 100, 100);
+    //     viewer_->addPointCloud(cloud_, orig_color, "cloud");
+    //     viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "cloud");
+
+    //     // クラスタを色分け描画＋法線ベクトルも表示
+    //     for(size_t i=0; i<clusters_.size(); ++i){
+    //         std::string name = "cluster_" + std::to_string(i);
+    //         int r = (i*77)%256, g = (i*130)%256, b = (i*200)%256; // 適当な色分け
+    //         RCLCPP_INFO(this->get_logger(), "remove cluster");
+    //         viewer_->removePointCloud(name);
+    //         RCLCPP_INFO(this->get_logger(), "remove normals");
+    //         viewer_->removePointCloud(name+ "_normals");
+
+    //         pcl::visualization::PointCloudColorHandlerCustom<pcl::PointNormal> cluster_color(clusters_[i], r, g, b);
+    //         viewer_->addPointCloud<pcl::PointNormal>(clusters_[i], cluster_color, name);
+    //         viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 5, name);
+
+    //         // 法線ベクトルを数点ごとに描画
+    //         RCLCPP_INFO(this->get_logger(), "add normals");
+    //         viewer_->addPointCloudNormals<pcl::PointNormal>(clusters_[i], 10, 0.2, name + "_normals");
+            
+    //         // 平均法線も出力
+    //         Eigen::Vector3d avg_normal(0,0,0);
+    //         int count = 0;
+    //         for(const auto& pt : clusters_[i]->points){
+    //             Eigen::Vector3d n(pt.normal_x, pt.normal_y, pt.normal_z);
+    //             if(n.norm() > 1e-3) {
+    //                 avg_normal += n;
+    //                 count++;
+    //             }
+    //         }
+    //         if(count > 0) avg_normal /= count;
+    //         std::cout << "Cluster " << i
+    //                   << ": normal = (" << avg_normal.x() << ", " << avg_normal.y() << ", " << avg_normal.z() << ")"
+    //                   << ", points = " << count << std::endl;
+    //     }
+    //     finished_clusterring_=true;
+    // }
 
     // 法線方向の差が閾値未満なら同一クラスタ
     static bool custom_condition(const pcl::PointNormal& seed, const pcl::PointNormal& candidate, float)

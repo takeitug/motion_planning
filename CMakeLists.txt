@@ -21,6 +21,7 @@ find_package(FRIClient REQUIRED)
 find_package(lbr_fri_idl REQUIRED)
 find_package(lbr_fri_ros2 REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common io features filters segmentation visualization)
+find_package(pcl_conversions REQUIRED)
 include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
@@ -90,7 +91,7 @@ target_include_directories(manipulability_planner_sim PRIVATE
 )
 
 add_executable(normal_cluster src/normal_cluster.cpp)
-ament_target_dependencies(normal_cluster rclcpp sensor_msgs)
+ament_target_dependencies(normal_cluster rclcpp sensor_msgs pcl_conversions)
 target_link_libraries(normal_cluster ${PCL_LIBRARIES})
 
 # ヘッダファイルのインストール
